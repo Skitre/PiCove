@@ -86,6 +86,90 @@ describe("observedFamilyFromHostEvent", () => {
   });
 });
 
+describe("first-observation placement hint", () => {
+  it("notifies once for a new Extension and stays quiet for replays and later families", async () => {
+    observeExtensionUiHostEvent("extensionUi.widgetChanged", {
+      key: "fleet",
+      widget: ["row"],
+      origin: trustedOrigin,
+    });
+    await vi.waitFor(() => expect(useAppStore.getState().notifications).toHaveLength(1));
+    const [notification] = useAppStore.getState().notifications;
+    expect(notification.message).toContain("Review");
+    expect(notification.message).toContain("Settings › Extension UI");
+    expect(notification.level).toBe("info");
+
+    observeExtensionUiHostEvent("extensionUi.widgetChanged", {
+      key: "fleet",
+      widget: ["row"],
+      origin: trustedOrigin,
+    });
+    observeExtensionUiHostEvent("extensionUi.statusChanged", {
+      key: "fleet",
+      text: "running",
+      origin: trustedOrigin,
+    });
+    await vi.waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.observedCapabilities.ext_review
+          ?.families,
+      ).toEqual(["widget", "status"]),
+    );
+    await Promise.resolve();
+    expect(useAppStore.getState().notifications).toHaveLength(1);
+  });
+
+  it("coalesces a concurrent burst of first observations into one hint", async () => {
+    observeExtensionUiHostEvent("extensionUi.widgetChanged", {
+      key: "fleet",
+      widget: ["row"],
+      origin: trustedOrigin,
+    });
+    observeExtensionUiHostEvent("extensionUi.statusChanged", {
+      key: "fleet",
+      text: "running",
+      origin: trustedOrigin,
+    });
+    await vi.waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.observedCapabilities.ext_review
+          ?.families,
+      ).toEqual(["widget", "status"]),
+    );
+    await Promise.resolve();
+    expect(useAppStore.getState().notifications).toHaveLength(1);
+  });
+
+  it("does not hint for Extensions already present in persisted capabilities", async () => {
+    useAppStore.getState().setDesktopSettings({
+      theme: "dark",
+      restoreLastSession: true,
+      autoRestartHostOnce: true,
+      extensionDecisionPresentation: "auto",
+      terminalProfile: "auto",
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        observedCapabilities: {
+          ext_review: { families: ["widget"], lastSeenAt: 1 },
+        },
+      },
+    });
+    observeExtensionUiHostEvent("extensionUi.widgetChanged", {
+      key: "fleet",
+      widget: ["row"],
+      origin: trustedOrigin,
+    });
+    await vi.waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.observedCapabilities.ext_review
+          ?.displayName,
+      ).toBe("Review"),
+    );
+    await Promise.resolve();
+    expect(useAppStore.getState().notifications).toHaveLength(0);
+  });
+});
+
 describe("observeExtensionUiFamily", () => {
   it("writes only the first trusted Extension/family pair and keeps clears", async () => {
     expect(await observeExtensionUiFamily({ invocationKind: "unknown" }, "widget")).toBe(false);

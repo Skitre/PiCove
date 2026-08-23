@@ -188,6 +188,7 @@ export const zh: Record<MessageKey, string> = {
   extensionUiHomeInline: "会话内联",
   extensionUiHomeModal: "弹窗",
   extensionUiDragHandle: "拖动移动",
+  extensionUiPlacementHint: "{name} 的界面位置可以自定义，可在 设置 › Extension UI 中调整。",
   extensionUiHighRiskLocked: "高风险请求始终使用弹窗 — Host 策略不可更改。",
   extensionUiReset: "重置该 Extension 的界面默认值",
   extensionUiForget: "忘记界面设置",

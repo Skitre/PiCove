@@ -14,9 +14,13 @@ import {
   notifyDesktopSettingsSaveFailure,
   persistExtensionUiSettings,
 } from "./desktop-settings";
+import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
 const displayNames = new Map<string, string>();
+
+/** Extensions already shown the one-time placement hint this session. */
+const placementHintNotifiedIds = new Set<string>();
 
 export function observedExtensionDisplayName(extensionId: string): string {
   return (
@@ -30,10 +34,12 @@ export function observedExtensionDisplayName(extensionId: string): string {
 
 export function resetObservedExtensionDisplayNames(): void {
   displayNames.clear();
+  placementHintNotifiedIds.clear();
 }
 
 export function forgetObservedExtensionDisplayName(extensionId: string): void {
   displayNames.delete(extensionId);
+  placementHintNotifiedIds.delete(extensionId);
 }
 
 function rememberExtensionDisplayName(origin: ExtensionUiOrigin | undefined): void {
@@ -116,7 +122,29 @@ export function observeExtensionUiHostEvent<E extends HostEventName>(
     payload && typeof payload === "object" && "origin" in payload
       ? (payload as { origin?: ExtensionUiOrigin }).origin
       : undefined;
-  void observeExtensionUiFamily(origin, family).catch((error) => {
-    notifyDesktopSettingsSaveFailure(error);
-  });
+  const extensionId = trustedExtensionId(origin);
+  const knownBefore = Boolean(
+    extensionId &&
+    canonicalExtensionUiSettings(useAppStore.getState().desktopSettings).observedCapabilities[
+      extensionId
+    ],
+  );
+  void observeExtensionUiFamily(origin, family)
+    .then((changed) => {
+      if (!extensionId || knownBefore || !changed) return;
+      // One-time discoverability hint: only the first observed family of an
+      // Extension announces that placement is configurable. The in-memory set
+      // coalesces concurrent first observations into a single notification.
+      if (placementHintNotifiedIds.has(extensionId)) return;
+      placementHintNotifiedIds.add(extensionId);
+      useAppStore.getState().pushNotification(
+        tCurrent("extensionUiPlacementHint", {
+          name: observedExtensionDisplayName(extensionId),
+        }),
+        "info",
+      );
+    })
+    .catch((error) => {
+      notifyDesktopSettingsSaveFailure(error);
+    });
 }
