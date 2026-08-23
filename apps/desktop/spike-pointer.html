@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>S1 — cross-screen pointer coordinates</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111312;
+        --raised: #1a1d1c;
+        --border: #2c302e;
+        --fg: #e6e8e7;
+        --muted: #8b918e;
+        --ok: #4ade80;
+        --bad: #f87171;
+        --warn: #fbbf24;
+        --accent: #38bdf8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          13px/1.5 ui-monospace,
+          SFMono-Regular,
+          "JetBrains Mono",
+          Menlo,
+          monospace;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        user-select: none;
+      }
+      header {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex: 0 0 auto;
+      }
+      h1 {
+        font-size: 13px;
+        margin: 0;
+        font-weight: 600;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      main {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 12px;
+        padding: 12px 14px;
+        overflow: hidden;
+      }
+      #pad {
+        border: 2px dashed var(--border);
+        border-radius: 10px;
+        background: var(--raised);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 16px;
+        cursor: grab;
+        touch-action: none;
+        transition: border-color 120ms;
+      }
+      #pad.live {
+        border-color: var(--accent);
+        border-style: solid;
+        cursor: grabbing;
+      }
+      #pad b {
+        display: block;
+        font-size: 15px;
+        margin-bottom: 8px;
+      }
+      #pad span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .right {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow: hidden;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 12px;
+      }
+      td {
+        padding: 2px 8px 2px 0;
+        white-space: nowrap;
+      }
+      td.k {
+        color: var(--muted);
+        width: 15em;
+      }
+      td.v {
+        font-variant-numeric: tabular-nums;
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: var(--raised);
+      }
+      .panel h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      .verdict {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+      }
+      .tag {
+        flex: 0 0 auto;
+        font-weight: 700;
+        width: 5.5em;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .vtext {
+        color: var(--fg);
+        font-size: 12px;
+      }
+      .vtext em {
+        color: var(--muted);
+        font-style: normal;
+      }
+      footer {
+        flex: 0 0 auto;
+        border-top: 1px solid var(--border);
+        padding: 8px 14px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      button {
+        font: inherit;
+        background: var(--raised);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      #dump {
+        flex: 1 1 auto;
+        background: var(--bg);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font: inherit;
+        font-size: 10px;
+        padding: 4px 8px;
+        height: 28px;
+        resize: none;
+        user-select: text;
+      }
+      .big {
+        font-size: 15px;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>S1 — cross-screen pointer coordinates</h1>
+      <span class="hint"
+        >按住左边方块不放，把鼠标拖出窗口、拖到第二块屏幕，再松手。可以多拖几次，统计会累加。</span
+      >
+    </header>
+
+    <main>
+      <div id="pad">
+        <div>
+          <b>按住这里拖动</b>
+          <span
+            >模拟浮窗标题栏拖拽<br />（pointer capture 已开）<br /><br />Esc / 松手结束一次采样</span
+          >
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="panel">
+          <h2>实时读数</h2>
+          <table>
+            <tr>
+              <td class="k">client (CSS px)</td>
+              <td class="v big" id="client">—</td>
+            </tr>
+            <tr>
+              <td class="k">screen</td>
+              <td class="v big" id="screen">—</td>
+            </tr>
+            <tr>
+              <td class="k">offset = screen − client</td>
+              <td class="v big" id="offset">—</td>
+            </tr>
+            <tr>
+              <td class="k">baseline offset (按下时)</td>
+              <td class="v" id="baseline">—</td>
+            </tr>
+            <tr>
+              <td class="k">offset 漂移 (本次 / 历史最大)</td>
+              <td class="v" id="drift">—</td>
+            </tr>
+            <tr>
+              <td class="k">指针位置</td>
+              <td class="v" id="where">—</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2>环境 / Tauri 基准</h2>
+          <table>
+            <tr>
+              <td class="k">devicePixelRatio</td>
+              <td class="v" id="dpr">—</td>
+            </tr>
+            <tr>
+              <td class="k">DOM screen (avail)</td>
+              <td class="v" id="scr">—</td>
+            </tr>
+            <tr>
+              <td class="k">viewport (inner)</td>
+              <td class="v" id="vp">—</td>
+            </tr>
+            <tr>
+              <td class="k">Tauri outerPosition (phys)</td>
+              <td class="v" id="tpos">—</td>
+            </tr>
+            <tr>
+              <td class="k">Tauri scaleFactor</td>
+              <td class="v" id="tsf">—</td>
+            </tr>
+            <tr>
+              <td class="k">→ 推算窗口原点 (logical)</td>
+              <td class="v" id="tlog">—</td>
+            </tr>
+            <tr>
+              <td class="k">Tauri currentMonitor</td>
+              <td class="v" id="tmon">—</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2>判定</h2>
+          <div id="verdicts"></div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <button id="copy">复制 JSON</button>
+      <button id="reset">清空统计</button>
+      <textarea id="dump" readonly spellcheck="false"></textarea>
+    </footer>
+
+    <script type="module">
+      // S1 spike. Throwaway measurement harness — see docs/architecture/extension-deck.md,
+      // "V2 batches". Question: while pointer capture is held, does a pointermove past the
+      // window's own bounds keep reporting usable screen coordinates, including on a second
+      // monitor with a different scale factor?
+      //
+      // The crux is whether `screen - client` is invariant. If it is, tear-off can place a
+      // window from either screenX/screenY directly or from the window origin plus clientX/Y,
+      // and both agree. If it jumps when the pointer crosses a display boundary, tear-off
+      // must fall back to committing on release at the last trustworthy position.
+
+      const EPS = 1.5; // px; sub-pixel jitter is not a failure
+
+      let tauri = null;
+      try {
+        const mod = await import("@tauri-apps/api/window");
+        tauri = mod.getCurrentWindow();
+      } catch {
+        tauri = null; // page also runs in a plain browser for comparison
+      }
+
+      const el = (id) => document.getElementById(id);
+      const pad = el("pad");
+
+      const stats = {
+        userAgent: navigator.userAgent,
+        runs: 0,
+        samples: 0,
+        samplesOutsideWindow: 0,
+        samplesOffPrimary: 0,
+        maxDrift: { x: 0, y: 0 },
+        maxDriftOffPrimary: { x: 0, y: 0 },
+        maxDriftOutside: { x: 0, y: 0 },
+        screenRange: { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+        dprSeen: new Set(),
+        baselines: [],
+        anomalies: [],
+      };
+
+      let session = null;
+
+      function fmt(n) {
+        return Number.isFinite(n) ? n.toFixed(1) : "—";
+      }
+      function pt(x, y) {
+        return `${fmt(x)}, ${fmt(y)}`;
+      }
+
+      // A coordinate outside the primary display's full bounds is the cheapest available
+      // signal that the pointer reached another monitor. Use screen.width/height, not the
+      // avail* rect — avail* excludes the menu bar and Dock, so those bands sit inside the
+      // same display yet fall outside avail and would read as a second monitor.
+      function offPrimary(sx, sy) {
+        const m = 2;
+        return sx < -m || sy < -m || sx > screen.width + m || sy > screen.height + m;
+      }
+
+      function outsideWindow(cx, cy) {
+        return cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight;
+      }
+
+      async function refreshEnv() {
+        el("dpr").textContent = String(window.devicePixelRatio);
+        el("scr").textContent =
+          `${screen.availWidth}×${screen.availHeight} @ ${screen.availLeft ?? 0},${screen.availTop ?? 0}`;
+        el("vp").textContent = `${window.innerWidth}×${window.innerHeight}`;
+        if (!tauri) {
+          el("tpos").textContent = el("tsf").textContent = el("tlog").textContent = el(
+            "tmon",
+          ).textContent = "(非 Tauri 环境)";
+          return;
+        }
+        try {
+          const [pos, sf, mon] = await Promise.all([
+            tauri.outerPosition(),
+            tauri.scaleFactor(),
+            tauri.currentMonitor(),
+          ]);
+          el("tpos").textContent = `${pos.x}, ${pos.y}`;
+          el("tsf").textContent = String(sf);
+          el("tlog").textContent = pt(pos.x / sf, pos.y / sf);
+          el("tmon").textContent = mon
+            ? `${mon.name ?? "?"} ${mon.size.width}×${mon.size.height} @${mon.position.x},${mon.position.y} sf=${mon.scaleFactor}`
+            : "null";
+          stats.tauri = {
+            outerPositionPhysical: { x: pos.x, y: pos.y },
+            scaleFactor: sf,
+            originLogical: { x: pos.x / sf, y: pos.y / sf },
+            currentMonitor: mon,
+          };
+        } catch (err) {
+          el("tpos").textContent = `error: ${String(err)}`;
+        }
+      }
+
+      function record(ev) {
+        if (!session) return;
+        const cx = ev.clientX;
+        const cy = ev.clientY;
+        const sx = ev.screenX;
+        const sy = ev.screenY;
+        const ox = sx - cx;
+        const oy = sy - cy;
+
+        if (!session.baseline) {
+          session.baseline = { x: ox, y: oy };
+          stats.baselines.push({ x: ox, y: oy, dpr: window.devicePixelRatio });
+        }
+        const dx = Math.abs(ox - session.baseline.x);
+        const dy = Math.abs(oy - session.baseline.y);
+
+        const out = outsideWindow(cx, cy);
+        const off = offPrimary(sx, sy);
+
+        stats.samples += 1;
+        if (out) stats.samplesOutsideWindow += 1;
+        if (off) stats.samplesOffPrimary += 1;
+        stats.dprSeen.add(window.devicePixelRatio);
+        stats.maxDrift.x = Math.max(stats.maxDrift.x, dx);
+        stats.maxDrift.y = Math.max(stats.maxDrift.y, dy);
+        if (out) {
+          stats.maxDriftOutside.x = Math.max(stats.maxDriftOutside.x, dx);
+          stats.maxDriftOutside.y = Math.max(stats.maxDriftOutside.y, dy);
+        }
+        if (off) {
+          stats.maxDriftOffPrimary.x = Math.max(stats.maxDriftOffPrimary.x, dx);
+          stats.maxDriftOffPrimary.y = Math.max(stats.maxDriftOffPrimary.y, dy);
+        }
+        stats.screenRange.minX = Math.min(stats.screenRange.minX, sx);
+        stats.screenRange.maxX = Math.max(stats.screenRange.maxX, sx);
+        stats.screenRange.minY = Math.min(stats.screenRange.minY, sy);
+        stats.screenRange.maxY = Math.max(stats.screenRange.maxY, sy);
+
+        if ((dx > EPS || dy > EPS) && stats.anomalies.length < 40) {
+          stats.anomalies.push({
+            client: { x: cx, y: cy },
+            screen: { x: sx, y: sy },
+            offset: { x: ox, y: oy },
+            baseline: session.baseline,
+            drift: { x: dx, y: dy },
+            outsideWindow: out,
+            offPrimary: off,
+            dpr: window.devicePixelRatio,
+          });
+        }
+
+        el("client").textContent = pt(cx, cy);
+        el("screen").textContent = pt(sx, sy);
+        el("offset").textContent = pt(ox, oy);
+        el("baseline").textContent = pt(session.baseline.x, session.baseline.y);
+        el("drift").textContent =
+          `${pt(dx, dy)}  /  ${pt(stats.maxDrift.x, stats.maxDrift.y)}`;
+        el("where").textContent =
+          `${out ? "窗口外" : "窗口内"}${off ? " · 主屏之外" : ""} · 累计 ${stats.samples} 点`;
+
+        renderVerdicts();
+      }
+
+      function verdict(state, label, text) {
+        const cls = state === "ok" ? "ok" : state === "bad" ? "bad" : "warn";
+        const tag = state === "ok" ? "PASS" : state === "bad" ? "FAIL" : "UNKNOWN";
+        return `<div class="verdict"><span class="tag ${cls}">${tag}</span><span class="vtext"><em>${label}</em> — ${text}</span></div>`;
+      }
+
+      function renderVerdicts() {
+        const out = [];
+
+        out.push(
+          stats.samplesOutsideWindow > 0
+            ? verdict(
+                "ok",
+                "指针出界后仍有事件",
+                `窗口外收到 ${stats.samplesOutsideWindow} 个 pointermove`,
+              )
+            : verdict("unknown", "指针出界后仍有事件", "还没把指针拖出窗口"),
+        );
+
+        const d = stats.maxDriftOutside;
+        out.push(
+          stats.samplesOutsideWindow === 0
+            ? verdict("unknown", "窗口外 offset 不变", "尚无窗口外样本")
+            : d.x <= EPS && d.y <= EPS
+              ? verdict("ok", "窗口外 offset 不变", `最大漂移 ${pt(d.x, d.y)} px`)
+              : verdict("bad", "窗口外 offset 不变", `最大漂移 ${pt(d.x, d.y)} px — 坐标空间不连续`),
+        );
+
+        out.push(
+          stats.samplesOffPrimary > 0
+            ? verdict("ok", "到达第二块屏幕", `主屏之外 ${stats.samplesOffPrimary} 个样本`)
+            : verdict("unknown", "到达第二块屏幕", "未检测到主屏之外的坐标（只有一块屏？）"),
+        );
+
+        const p = stats.maxDriftOffPrimary;
+        out.push(
+          stats.samplesOffPrimary === 0
+            ? verdict("unknown", "跨屏 offset 不变", "尚无跨屏样本")
+            : p.x <= EPS && p.y <= EPS
+              ? verdict("ok", "跨屏 offset 不变", `最大漂移 ${pt(p.x, p.y)} px — screenX/Y 可直接用`)
+              : verdict(
+                  "bad",
+                  "跨屏 offset 不变",
+                  `最大漂移 ${pt(p.x, p.y)} px — 跨屏坐标不可信，tear-off 需降级`,
+                ),
+        );
+
+        if (stats.dprSeen.size > 1) {
+          out.push(
+            verdict("warn", "devicePixelRatio 变化", `观察到 ${[...stats.dprSeen].join(", ")}`),
+          );
+        }
+
+        el("verdicts").innerHTML = out.join("");
+        el("dump").value = JSON.stringify(dump());
+      }
+
+      function dump() {
+        return {
+          ...stats,
+          dprSeen: [...stats.dprSeen],
+          screenRange: Number.isFinite(stats.screenRange.minX) ? stats.screenRange : null,
+          env: {
+            devicePixelRatio: window.devicePixelRatio,
+            screen: {
+              availLeft: screen.availLeft ?? 0,
+              availTop: screen.availTop ?? 0,
+              availWidth: screen.availWidth,
+              availHeight: screen.availHeight,
+              width: screen.width,
+              height: screen.height,
+            },
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+          },
+        };
+      }
+
+      function endSession() {
+        if (!session) return;
+        pad.releasePointerCapture?.(session.pointerId);
+        session = null;
+        pad.classList.remove("live");
+        void refreshEnv();
+      }
+
+      pad.addEventListener("pointerdown", (ev) => {
+        if (session) return;
+        ev.preventDefault();
+        pad.setPointerCapture(ev.pointerId);
+        session = { pointerId: ev.pointerId, baseline: null };
+        stats.runs += 1;
+        pad.classList.add("live");
+        void refreshEnv();
+        record(ev);
+      });
+
+      pad.addEventListener("pointermove", (ev) => {
+        if (session?.pointerId === ev.pointerId) record(ev);
+      });
+      pad.addEventListener("pointerup", endSession);
+      pad.addEventListener("pointercancel", endSession);
+      window.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") endSession();
+      });
+
+      el("reset").addEventListener("click", () => {
+        location.reload();
+      });
+      el("copy").addEventListener("click", async () => {
+        const text = JSON.stringify(dump(), null, 2);
+        try {
+          await navigator.clipboard.writeText(text);
+          el("copy").textContent = "已复制 ✓";
+        } catch {
+          el("dump").value = text;
+          el("dump").select();
+          el("copy").textContent = "请手动复制 →";
+        }
+        setTimeout(() => (el("copy").textContent = "复制 JSON"), 1800);
+      });
+
+      await refreshEnv();
+      renderVerdicts();
+      window.addEventListener("resize", () => void refreshEnv());
+    </script>
+  </body>
+</html>

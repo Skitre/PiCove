@@ -1,7 +1,8 @@
 # Extension Deck — fixed PiDeck shell, global Extension presentation
 
-> **Status: accepted target design (2026-08-22). Implemented behind the
-> one-release `extension-deck-v1` gate (default on).** This page
+> **Status: accepted target design (2026-08-22), amended 2026-08-23 by the V2
+> amendment below. V1 implemented behind the one-release `extension-deck-v1`
+> gate (default on); V2 unbuilt.** This page
 > supersedes [Deck](./deck.md) after product review. Deck remains the historical
 > record of the rejected whole-window pane alternative and must not be used as
 > an implementation specification. This design keeps its Extension UI goals,
@@ -23,6 +24,45 @@ Extension has one global presentation profile shared by every session; moving
 an Extension surface edits that global profile.
 
 This is not a session workspace system and not a general-purpose pane manager.
+
+## V2 amendment — detached floats and structured widgets
+
+V1 shipped with two deliberate non-goals: **“OS-level extra windows”** and
+**“Inventing interactivity for read-only widget content.”** V2 reverses both,
+narrowly. Everything else on the V1 non-goal list stands.
+
+Both reversals are additive. A user who never detaches a float and an Extension
+that never publishes a structured payload get V1 behavior unchanged.
+
+### Reversal 1 — a float may leave the main window
+
+|                       |                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1 rationale          | An HTML float layer inside one window avoided native window geometry, per-monitor DPI, cross-window focus, and a second renderer lifecycle. None of that was required to give Extension surfaces a home.                                                                                                                                                                        |
+| What changed          | The float layer succeeded at giving Extension content a stable home and then hit the ceiling of one window. A fleet widget or a `custom()` panel is exactly the content a user wants parked on a second monitor while Chat stays on the first. Inside one window a float is also permanently subordinate to the window's own size and to the native Browser rect it must dodge. |
+| Scope of the reversal | Only an Extension **float** may become an OS window, and only for the `widget` and `custom` families that could already float. Sidebar, Chat, RightDock, anchors, Settings, and the Host modal layer never leave the main window. Status still cannot float, so it still cannot detach.                                                                                         |
+
+A detached float is the same presentation slot in a different container, not a
+second application. See [Float layer](#float-layer) for the state model and
+[Detached float windows](#detached-float-windows) for the architecture.
+
+### Reversal 2 — a widget may declare actions
+
+|                       |                                                                                                                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1 rationale          | The SDK's `setWidget` carries `string[]` lines or a `pi-tui` component factory. Neither carries action semantics, so any interactivity would have been invented by PiDeck and attached to content that did not ask for it.                                                                              |
+| What changed          | The constraint was never “widgets must be inert” — it was “PiDeck must not guess intent from text.” An Extension that _declares_ its actions is not a guess. PiDeck's own `extensionUi.widgetChanged` already carries `widget: JsonValue`, so a declared payload needs no new event and no SDK release. |
+| Scope of the reversal | Only an explicit, versioned, PiDeck-owned **structured payload** carries actions. Plain `string[]` widgets and factory-rendered widgets stay read-only forever; PiDeck never infers a button from a line of text. Extensions still ship semantic data, never HTML, CSS, React, or renderer code.        |
+
+See [Structured widgets](#structured-widgets) for the schema and action channel.
+
+### What did not change
+
+- Host stays authoritative for `presentation`, `risk`, and `routeReason`.
+- Presentation profiles stay global per `ExtensionId × family`.
+- The app store stays the only writer of `DesktopSettings`.
+- Blocking dialogs stay non-draggable, non-dockable, and non-detachable.
+- Session switching still loads no layout.
 
 ## Why this replaces the broader Deck
 
@@ -100,12 +140,17 @@ The existing window structure remains product-owned and non-recomposable:
 | RightDock                        | kept as the fixed, collapsible right rail with its existing width preference and shortcuts |
 | Settings                         | remains a full-window overlay page                                                         |
 | Extension anchors                | named slots owned by Chat                                                                  |
-| Extension floats                 | HTML layer owned by the Extension Deck                                                     |
+| Extension floats                 | HTML layer owned by the Extension Deck; a float may also detach to its own window          |
 | Extension Dock                   | bounded layout inside a dynamic RightDock `Extensions` tab                                 |
 | Host modal layer                 | authoritative non-movable presentation for policy-routed requests                          |
 
 There are no `left` / `main` / `right` Deck regions, no builtin `PaneNode`s,
 and no drop targets on Chat, Sidebar, or builtin RightDock tabs.
+
+The main window remains the whole application: it holds every builtin surface,
+the only Chat session, the only Host client, and the only settings writer. A
+detached Extension float is the single exception to “one window,” and it carries
+no application shell of its own — see [Float layer](#float-layer).
 
 ## Vocabulary
 
@@ -119,6 +164,9 @@ and no drop targets on Chat, Sidebar, or builtin RightDock tabs.
 | Anchor               | `aboveComposer` or `belowComposer` inside Chat                                                           |
 | Extensions Dock      | The dynamic RightDock tab that hosts only Extension presentation slots                                   |
 | Float                | A movable, resizable HTML shell for an Extension slot                                                    |
+| Attached float       | A float rendered in the main window's HTML float layer — the only V1 form                                |
+| Detached float       | The same float slot hosted in its own OS window, positioned in screen coordinates                        |
+| Structured widget    | A widget payload matching PiDeck's declared schema, rendered as host-owned controls instead of text      |
 | Observed capability  | A surface family Desktop has learned from a validated, trusted-origin Host event                         |
 
 ## Extension surface model
@@ -140,6 +188,12 @@ Only widget and `custom()` slots are draggable. Status placement changes
 through Settings or Dock tab ordering; it never becomes a standalone float.
 Blocking dialogs are never draggable and cannot enter Extensions Dock, Float,
 or hidden state.
+
+Detaching a float to its own window is available to exactly the families that
+may float — widget and `custom()` — because it selects a container for an
+existing float, not a new presentation. A family that cannot float cannot
+detach, so status and blocking dialogs stay inside the main window by the same
+rule that already governs them.
 
 ### Verb-by-verb presentation policy
 
@@ -681,29 +735,42 @@ permanent representations.
 
 ## Float layer
 
-An Extension widget or `custom()` family may resolve to one HTML float shell.
-Status and blocking dialogs cannot. The shell hosts the family's live aggregate
-content and uses a compatible Host renderer.
+An Extension widget or `custom()` family may resolve to one float shell. Status
+and blocking dialogs cannot. The shell hosts the family's live aggregate content
+and uses a compatible Host renderer.
+
+A float shell is in one of two **containers**. The container is a property of
+the same `float` home, not a separate presentation choice: the family policy,
+the Settings row, the drag rules, and the float cap are identical in both.
+
+| Container | Where it lives                                                     | Geometry                                         | Stacking                                           |
+| --------- | ------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------- |
+| Attached  | HTML float layer in the main window (V1 behavior, and the default) | viewport-normalized rect                         | z-order within the float layer                     |
+| Detached  | Its own OS window                                                  | logical screen coordinates plus monitor identity | OS window order; `pinned` becomes OS always-on-top |
 
 Floats support:
 
 - title-bar drag and edge resize;
-- viewport clamp and snapping;
+- viewport clamp and snapping (attached) or monitor clamp (detached);
 - optional pin;
 - Dock drop target;
 - return-to-anchor for widget;
+- tear-off to a detached window and re-attach by dragging back over the main
+  window;
 - focus restoration on hide/close;
 - labelled non-modal dialog semantics;
 - reduced-motion behavior.
 
-At most eight Extension float shells may be live. Settings prevents creating a
-ninth; corrupt overflow falls back to Extensions Dock primary. The limit is on
-live shells, not on observed Extensions.
+At most eight Extension float shells may be live, **counting attached and
+detached together** — detaching moves a shell, it does not create one. Settings
+prevents creating a ninth; corrupt overflow falls back to Extensions Dock
+primary. The limit is on live shells, not on observed Extensions.
 
 A slot shell exists only while matching session content exists. When content
-ends, the shell hides and releases renderer resources. Its global preference
-remains. Reappearance creates/reuses the shell at the same global rect; it does
-not restore session state.
+ends, the shell hides — a detached window is destroyed — and releases renderer
+resources. Its global preference, including its container and placement,
+remains. Reappearance recreates the shell in the same container at the same
+global placement; it does not restore session state.
 
 Closing a float invokes the family-correct action:
 
@@ -711,7 +778,71 @@ Closing a float invokes the family-correct action:
 - `custom()` close sends cancel / `done()` through existing ownership checks.
 
 Removing DOM must never leave a still-live `custom()` request with no reachable
-surface.
+surface. Destroying a detached window carries the same obligation: the slot
+must re-resolve to a reachable container before its window goes away.
+
+### Detached float windows
+
+A detached float is a **thin client**. The main window remains the only Host
+client and the only writer of `DesktopSettings`; the float window renders one
+slot and reports user intent back.
+
+| Concern        | Rule                                                                                                                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Window         | One Tauri window per detached slot, undecorated, labelled from the slot id, loading the same frontend bundle under a `surface=float` entry point that mounts a float root instead of the application shell |
+| Host transport | The float window never subscribes to the Host event stream and never sends a Host request. It has no session, workspace, or agent state                                                                    |
+| Content        | The main window forwards that slot's resolved mount payload — widget rows, status rows, or the `custom()` frame stream — over an app-level event addressed to the window                                   |
+| Intent         | The float window reports close, pin, geometry commit, `custom()` input/resize, and widget actions back to the main window, which performs the Host request and the settings write                          |
+| Chrome         | Theme, language, reduced-motion, and label text are forwarded with the content so the float never reads settings independently                                                                             |
+| Lifetime       | Bounded by the main window. Main window close, Host restart, and app update destroy every float window first. On boot the main window destroys orphans before restoring any placement                      |
+
+This preserves every V1 invariant that depended on there being one store: one
+canonical settings value, one serialized write queue, one observation path, and
+one `extensionUi.configure` projection. A second full application instance is
+rejected for the opposite reason — it would duplicate session restore, the
+event stream, and the settings writer, and reintroduce write races the V1
+contract spent real effort eliminating.
+
+### Tear-off and re-attach
+
+Both directions are one pointer gesture, and both are driven by the window that
+owns the pointer. The gesture never hands off to a native window drag loop,
+because during a native drag the application receives no pointer movement and
+therefore cannot hit-test drop targets or highlight drop zones.
+
+1. **Tear-off.** Dragging an attached float's title bar keeps pointer capture in
+   the main window, which continues to receive movement past its own bounds.
+   Crossing the main window's outer bounds by a threshold creates the detached
+   window, which then tracks the pointer until release.
+2. **Re-attach.** A detached float's title-bar drag positions its own window and
+   reports its screen rect to the main window, which hit-tests the existing
+   Dock, anchor, and float-layer drop targets and highlights them exactly as an
+   in-window drag does. Releasing over a legal target re-attaches the slot.
+3. **Escape** cancels either direction and restores the pre-drag container and
+   placement, matching the existing in-window drag.
+
+Screen-coordinate conversion, monitor selection, bounds hit-testing, and
+placement recovery live in pure modules with unit tests, so the only untested
+surface is the thin platform call that moves a window.
+
+### Detached placement and monitor recovery
+
+Detached placement is stored in logical screen coordinates together with enough
+monitor identity to validate it later:
+
+```ts
+type DetachedFloatPlacement = {
+  monitor: { name?: string; position: Point; size: Size; scaleFactor: number };
+  rect: Rect; // logical screen coordinates
+};
+```
+
+On load, placement is matched against the current monitor set by name first and
+by position/size second. An unmatched placement **reattaches the slot to the
+main window** at its stored normalized rect. PiDeck never spawns a window onto a
+monitor that is not currently present, and never silently clamps a float onto a
+different monitor than the user chose. Monitor changes while running follow the
+same rule.
 
 ## Decisions and policy
 
@@ -738,12 +869,12 @@ modal mounts when Host policy permits.
 Rendering remains Host-owned. Extensions provide semantic data, not HTML,
 React, or CSS.
 
-| Family          | Initial renderers           | Notes                                                                                     |
-| --------------- | --------------------------- | ----------------------------------------------------------------------------------------- |
-| widget          | `strip`, `panel`            | Home selects the compatible form: anchors stay compact; Dock/Float use panel presentation |
-| status          | `strip`, `list`             | anchored default stays compact                                                            |
-| custom          | `xterm`; later `structured` | unknown `pi-tui` trees remain xterm                                                       |
-| blocking dialog | `card`                      | inline and Modal reuse one Host-owned control shell per method                            |
+| Family          | Initial renderers              | Notes                                                                                                                                                       |
+| --------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| widget          | `strip`, `panel`, `structured` | Home selects the compatible form: anchors stay compact; Dock/Float use panel presentation. A declared structured payload selects `structured` in every home |
+| status          | `strip`, `list`                | anchored default stays compact                                                                                                                              |
+| custom          | `xterm`; later `structured`    | unknown `pi-tui` trees remain xterm                                                                                                                         |
+| blocking dialog | `card`                         | inline and Modal reuse one Host-owned control shell per method                                                                                              |
 
 V1 derives renderer form from family and home rather than exposing an
 independent renderer picker for every plugin. A later renderer preference may
@@ -755,6 +886,81 @@ compatibility renderer that fixes the existing raw transport-line bug. Content
 sniffing is not a general renderer contract; replacing it with explicit
 transport metadata or bridge-side suppression requires a separately reviewed
 protocol change.
+
+### Structured widgets
+
+The `structured` widget form is selected by the payload, not by the home. It is
+the only widget content that carries actions.
+
+`extensionUi.widgetChanged` already carries `widget: JsonValue`, so a structured
+payload needs no new event, no SDK release, and no change to how a widget is
+published, aggregated into a slot, or placed. An Extension opts in by publishing
+a payload that matches the declared discriminator and schema version:
+
+```ts
+type StructuredWidget = {
+  pideck: 1; // discriminator and schema version
+  rows: WidgetRow[];
+};
+
+type WidgetRow =
+  | { kind: "text"; text: string; tone?: "default" | "muted" | "warning" | "danger" }
+  | { kind: "fields"; fields: { label: string; value: string }[] }
+  | { kind: "progress"; value: number; max: number; label?: string }
+  | { kind: "actions"; actions: WidgetAction[] };
+
+type WidgetAction = {
+  id: string;
+  label: string;
+  style?: "default" | "primary" | "danger";
+  confirm?: string; // host-rendered confirmation before dispatch
+  disabled?: boolean;
+};
+```
+
+Anything that does not match — including a payload with an unknown `pideck`
+version — renders through the existing read-only text renderers. This is a
+fallback, never an error: a widget published for a newer PiDeck still shows its
+content.
+
+The row vocabulary is intentionally output-shaped plus one action row. Free-form
+text entry, selection, and multi-step forms are not in this schema; blocking
+dialogs and `custom()` already own those interactions and stay the right answer
+for them.
+
+Extensions still ship semantic data only. `rows` describes meaning; PiDeck owns
+every control, style, focus ring, and accessible name. There is no path for an
+Extension to ship HTML, CSS, React, or renderer code.
+
+### Widget action channel
+
+An action dispatches through a new Host method alongside the existing
+`custom()` input path, carrying the same session-target context and the same
+ownership and epoch guards:
+
+```ts
+"extensionUi.widgetAction": { key: string; actionId: string };
+// result: { accepted: true }
+```
+
+The bridge delivers it to a handler the Extension registered for that widget
+key. PiDeck's bridge already constructs the entire `ExtensionUIContext` object
+handed to Extensions — `onTerminalInput` is a bridge-owned stub today — so this
+registration is a bridge addition, not an upstream SDK dependency. The
+type-level declaration follows the existing SDK patch.
+
+Mandatory guards, all mirroring `extensionUi.customInput`:
+
+- the action is delivered only to the trusted origin that published that key;
+- a key with no live widget, no registered handler, or an unknown `actionId`
+  is rejected rather than queued;
+- session switch and epoch advance invalidate pending actions;
+- payload counts, identifier lengths, label lengths, and serialized size are
+  bounded by the same validator layer as the rest of the Extension UI protocol;
+- a handler that throws produces a diagnostic and leaves the widget published.
+
+An action never implies a transcript entry, a prompt, or an agent turn. An
+Extension that wants those effects performs them itself inside its handler.
 
 ## Session switching
 
@@ -850,16 +1056,28 @@ Load validates:
 - known family names;
 - legal home values per family;
 - finite, viewport-clampable Float rects;
+- for a detached Float, a finite screen rect and a well-formed monitor
+  descriptor, resolved against the live monitor set as described in
+  [Detached placement and monitor recovery](#detached-placement-and-monitor-recovery);
 - Dock group, direction, order, and size ratio;
-- the live Float cap;
+- the live Float cap across both containers;
 - bounded Extension/capability counts and serialized size.
 
 Unknown versions reset presentation preferences to defaults. Invalid individual
 profiles are dropped and re-resolved without preventing the rest of Settings
 from loading. Observed capabilities may be retained when independently valid.
 
+A detached Float keeps its attached rect alongside its detached placement, so
+re-attaching and monitor-recovery fallback both have a defined destination
+without inventing geometry. Detached placement is an **optional key on the
+existing `float` home, not a schema-version bump**: a V1 file loads with every
+Float attached, which is exactly V1 behavior, and a V2 file read by an older
+PiDeck loses only the one affected family instead of resetting every Extension
+UI preference the way an unknown `version` would.
+
 Writes occur atomically after Settings changes, completed drops, completed
-resizes, and Undo. Pointer movement never writes DesktopSettings continuously.
+resizes, completed tear-off/re-attach gestures, and Undo. Pointer movement never
+writes DesktopSettings continuously, and neither does moving a detached window.
 
 For any batch that changes `desktop_settings.rs`, `verify:quick` is necessary
 but insufficient: run `pnpm lint:rust` and the focused Desktop settings Cargo
@@ -881,12 +1099,18 @@ Browser split, native float, or per-layout rect restoration.
 
 Two native rules remain:
 
-1. A live Extension Float cannot overlap the visible native Browser rect. Drag
-   snaps outside it with a visual exclusion hint. Docked Extension content and
-   Web are mutually exclusive RightDock tabs, so they do not overlap.
+1. An **attached** Extension Float cannot overlap the visible native Browser
+   rect. Drag snaps outside it with a visual exclusion hint. Docked Extension
+   content and Web are mutually exclusive RightDock tabs, so they do not
+   overlap. A **detached** Float is in a different OS window and cannot be
+   occluded by a child webview, so the exclusion rule does not apply to it —
+   detaching is a legitimate way out of the exclusion, and re-attaching
+   re-imposes it.
 2. A reference-counted native occlusion guard hides Browser surfaces while the
    Host modal layer, Settings, or another HTML dialog must cover them. Only the
-   final release restores the currently active Web tab.
+   final release restores the currently active Web tab. Detached Float windows
+   never take the guard: they cannot be covered by the Browser and must not
+   blank it.
 
 ## Focus, keyboard, and accessibility
 
@@ -902,6 +1126,7 @@ New commands are scoped to Extension surfaces:
 
 - focus next/previous Extension Float;
 - move a focused widget or `custom()` slot to a legal Dock / Float / anchor;
+- detach the focused Float to a window and re-attach it;
 - activate next/previous tab in the focused Extension Dock group;
 - move the focused slot between primary and secondary Dock groups;
 - resize the Extension Dock split;
@@ -915,6 +1140,25 @@ Anchors and Dock groups use the repo's existing `tablist` / `tabpanel`
 patterns. The single Dock separator uses `role="separator"` with ARIA values.
 Floats are labelled non-modal dialogs. Focus returns to the invoking or nearest
 stable shell control when session content disappears.
+
+Detaching adds a focus boundary the HTML float layer never had:
+
+- an attached Float restores focus to its invoking control, as today; a
+  detached Float's window cannot reach that element, so destroying it returns
+  focus to the main window's nearest stable shell control instead;
+- detaching moves keyboard focus with the content, so the gesture does not
+  strand the user's focus in an empty float layer;
+- “focus next/previous Extension Float” traverses attached and detached shells
+  in one order and raises the target window when it is detached;
+- a detached Float is still a labelled non-modal dialog and never traps focus.
+  It has its own window chrome, so it also honors the platform's own window
+  close and cycle shortcuts;
+- global chat commands such as `chat.stop` belong to the main window and are
+  not rebound inside a Float window.
+
+Structured widget controls are ordinary focusable host controls inside their
+slot: real buttons with accessible names, tab order, and `confirm` prompts
+rendered by PiDeck. A widget action never moves focus on its own.
 
 ## Cut line — what remains unchanged
 
@@ -985,6 +1229,57 @@ family cuts over.
 
 No builtin migration batch exists.
 
+### V2 batches
+
+V2 continues the same rule: each batch is independently green and independently
+shippable, and an unfinished surface stays behind its gate. Detached floats land
+before structured widgets, because the float container is the harder and riskier
+of the two and the widget schema does not depend on it.
+
+Two spikes gate batch 6, not batch 5. Both are throwaway measurements, not
+products, and both decide how good the gesture can feel rather than whether the
+feature is possible:
+
+- **S1 — cross-screen pointer coordinates.** With pointer capture held, confirm
+  that movement past the main window's bounds keeps reporting usable screen
+  coordinates across monitors with different scale factors, on every supported
+  platform. If it does not, tear-off falls back to committing on release at the
+  last known position.
+
+  _Measured 2026-08-23, macOS 15 / WKWebView, single 1512×982 display at
+  `devicePixelRatio` 2, 2913 samples over 6 drags._ Pointer capture keeps
+  delivering `pointermove` past the window's bounds (1650 out-of-window
+  samples), and `screen − client` is **exactly** invariant: 0.0 px drift on
+  both axes, no outliers, across two different window positions. On this
+  configuration either positioning formula works and live tear-off is viable.
+  The cross-monitor and mixed-scale-factor half of S1 remains unmeasured on
+  every platform, and Windows per-monitor DPI is the case most likely to break
+  the invariant. Rerun before committing to batch 6.
+
+- **S2 — pointer-driven window movement.** Measure whether moving a window once
+  per animation frame from the main window's pointer stream is smooth enough to
+  read as dragging. If it is not, batch 6's live tear-off is replaced by a
+  ghost outline that commits on release.
+
+5. **Detached float placement and window shell.** Add the screen-space
+   placement model, the additive optional placement key, monitor matching and
+   reattach fallback, and the pure geometry/hit-test modules with their unit
+   tests. Add
+   the float window entry point, its capability entry, the thin-client content
+   and intent channel, and orphan cleanup on boot and shutdown. Detach and
+   re-attach are available from the slot context menu and the keyboard command
+   only. No drag gesture yet, so the batch is shippable without S1 or S2.
+6. **Tear-off and re-attach gestures.** Add the pointer-driven detach threshold,
+   live window tracking, drop-zone hit-testing from a detached window, Escape
+   cancellation, and the degraded paths S1/S2 select. Cover cap enforcement,
+   monitor loss during a drag, and main-window shutdown mid-gesture.
+7. **Structured widgets.** Add the payload schema, validators, and DTO/protocol
+   coverage; the `structured` renderer and its fallback to the read-only text
+   renderers; the `extensionUi.widgetAction` method with ownership, epoch, and
+   bound guards; and the bridge-side handler registry with its SDK-patch type
+   declaration. Renderer and transport land together so no half-interactive
+   widget is ever published.
+
 ## Acceptance criteria
 
 1. With no active Extension UI, the window matches today's PiDeck
@@ -1028,6 +1323,40 @@ No builtin migration batch exists.
 18. `setTitle`, loader APIs, editor/TUI chrome, transcript renderers, commands,
     and shortcuts receive no presentation homes.
 
+### V2 acceptance criteria
+
+19. With no float detached and no structured payload published, behavior is
+    identical to V1, and a V1 settings file loads with every float attached.
+20. Detaching preserves slot identity: the same Extension family keeps its
+    content, its Settings row, and its place in the float cap. Eight is still
+    the total across both containers, and detaching never creates a ninth.
+21. A detached float survives the main window changing pages, and disappears
+    when its session content ends, when the main window closes, and when the
+    Host restarts. No orphan window outlives the application, including after a
+    crash and relaunch.
+22. A detached window renders one slot and nothing else: it issues no Host
+    request, holds no session or workspace state, and writes no settings.
+23. A placement whose monitor is absent reattaches the float to the main window.
+    No window is ever created off-screen or silently moved to another monitor.
+24. Tear-off and re-attach commit exactly one settings write on release, show
+    the “applies to all sessions” toast, and support Undo. Moving a detached
+    window writes once on release, never continuously.
+25. Escape during either gesture restores the pre-drag container and placement.
+26. A still-live `custom()` request is never left without a reachable surface by
+    detaching, re-attaching, monitor loss, or window destruction.
+27. A structured payload renders as host-owned controls in every home; any
+    non-matching or newer-versioned payload renders through the existing
+    read-only text renderers rather than erroring.
+28. `string[]` and factory-rendered widgets expose no actions. PiDeck never
+    derives a control from widget text.
+29. A widget action reaches only the trusted origin that published that key.
+    Actions against a stale key, an unknown action id, a missing handler, or a
+    superseded epoch are rejected, and none of them produce a transcript entry
+    or an agent turn.
+30. Status and blocking dialogs expose no detach affordance, and no builtin
+    surface, Chat, Sidebar, RightDock, or Settings page can leave the main
+    window by any path.
+
 ## Decisions recorded here
 
 | Decision                                                  | Rationale                                                                                                                 |
@@ -1043,18 +1372,43 @@ No builtin migration batch exists.
 | Host mandatory guards precede user preference             | Presentation freedom cannot weaken ownership, risk, lifecycle, or surface-availability routing                            |
 | Blocking dialogs only choose Follow Host / Inline / Modal | Waiting requests stay visible and reachable; Dock/Float freedom is not worth the blocking-state ambiguity                 |
 | Status cannot Float                                       | Passive one-line chrome belongs in its composer strip or the shared Extensions Dock, not a proliferation of micro-windows |
-| Widget has the broadest placement set but stays read-only | Persistent summaries benefit from Anchor/Dock/Float; moving them does not invent input semantics                          |
+| Widget has the broadest placement set but stays read-only | Superseded by the V2 table below; moving content still does not invent input semantics, only a declared payload does      |
 | `custom()` only chooses Follow Extension / Dock / Float   | It is focused interactive content that must remain visible until `done()`                                                 |
 | SDK hints remain selectable defaults                      | “Follow Extension” preserves `placement` / `overlay`; an explicit global user preference remains stable                   |
 | Float geometry is global and normalized                   | Placement survives sessions, projects, and window-size changes                                                            |
 | Session content clears; presentation profile remains      | Preserves SDK lifecycle while avoiding layout churn                                                                       |
 | Notifications stay out                                    | Transient signals have no durable spatial identity                                                                        |
 
+### V2 decisions
+
+| Decision                                                         | Rationale                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Detached is a container of the `float` home, not a new home      | Family policy, Settings rows, drag rules, and the float cap stay one code path; the presentation choice list does not grow                                                                                                                                    |
+| Only widget and `custom()` may detach                            | Detaching selects a container for an existing float, so it inherits exactly the families that could already float                                                                                                                                             |
+| A detached float is a thin client, not a second app instance     | Keeps one Host client, one settings writer, one observation path, and one `configure` projection — the invariants V1 paid for                                                                                                                                 |
+| The main window stays the only settings writer                   | A second writer reintroduces the write races the V1 serialized-update contract eliminated                                                                                                                                                                     |
+| Gestures never hand off to a native window drag                  | A native drag loop delivers no pointer movement, so the app could not hit-test drop targets or highlight drop zones                                                                                                                                           |
+| Detached placement stores monitor identity, not just coordinates | Coordinates alone cannot distinguish a reconnected monitor from a missing one; identity makes recovery decidable                                                                                                                                              |
+| An unmatched monitor reattaches instead of clamping              | Silently relocating a float to another screen loses the user's actual choice; reattaching is visible and recoverable                                                                                                                                          |
+| The float cap counts both containers                             | Detaching moves a shell rather than creating one, so the resource bound the cap protects is unchanged                                                                                                                                                         |
+| A detached `custom()` panel is fed by relay, not by subscription | The float has no Host client, so the main window forwards frames on its behalf and turns keystrokes back into Host requests. It retains a capped tail so a window that opens mid-stream is repainted rather than blank, and hands that tail back on re-attach |
+| A float may reach the clipboard, and nothing else                | A detached `custom()` panel is a real terminal, and the clipboard is the user's own rather than a channel into PiDeck state. Host transport, settings, shell, browser, dialogs, and updater stay withheld                                                     |
+| Re-attach is offered by the float window, not the main window    | A detached slot is not drawn in the main window, so it can never be the focused slot there; the control belongs where the window actually has focus                                                                                                           |
+| Structured widgets reuse `widget: JsonValue`                     | The action-carrying payload needs no new event, no SDK release, and no change to publication, aggregation, or placement                                                                                                                                       |
+| Only a declared payload carries actions                          | Preserves the real V1 constraint — PiDeck must not infer intent from text — while letting an Extension state its intent                                                                                                                                       |
+| Unknown payload versions fall back to text, never error          | A widget published for a newer PiDeck still shows its content                                                                                                                                                                                                 |
+| The action row vocabulary stays output-shaped                    | Free-form entry, selection, and multi-step forms already belong to blocking dialogs and `custom()`                                                                                                                                                            |
+| Widget actions are bridge-registered, not SDK-registered         | PiDeck already constructs the whole `ExtensionUIContext` it hands Extensions, so this costs a bridge method and a patched type, not an SDK release                                                                                                            |
+| An action implies no prompt, turn, or transcript entry           | Clicking a control is a UI event; an Extension that wants agent effects performs them itself                                                                                                                                                                  |
+
 ## Non-goals
+
+Two V1 non-goals were narrowed by the [V2 amendment](#v2-amendment--detached-floats-and-structured-widgets)
+and appear below in their narrowed form. Everything else stands unchanged.
 
 - A whole-window Obsidian/IDE pane workspace.
 - Moving, floating, splitting, or duplicating builtin panels.
-- Per-session layout or per-workspace layout in V1.
+- Per-session layout or per-workspace layout.
 - Per-widget-key presentation overrides.
 - More than one nested Dock split.
 - Dock, Float, Anchor, or hidden presentation for blocking dialogs.
@@ -1062,9 +1416,20 @@ No builtin migration batch exists.
 - Presentation settings for notifications, `setTitle`, loader/editor/TUI
   chrome, transcript renderers, commands, or shortcuts.
 - Multiple live Chat sessions in one window.
-- OS-level extra windows.
+- **Narrowed in V2** — OS-level windows for anything other than a detached
+  Extension float. Chat, Sidebar, RightDock, anchors, Settings, and the Host
+  modal layer never leave the main window, and a float window never carries an
+  application shell, a Host client, or a settings writer.
 - Extension-shipped HTML, CSS, React, or renderer code.
-- Inventing interactivity for read-only widget content.
+- **Narrowed in V2** — inventing interactivity for text widget content. Plain
+  `string[]` and factory-rendered widgets stay read-only; only an explicit,
+  versioned, declared structured payload carries actions, and PiDeck never
+  derives a control from a line of text.
+- Free-form text entry, selection, or multi-step forms in the structured widget
+  schema; those remain the job of blocking dialogs and `custom()`.
+- Per-monitor presentation profiles, or any placement memory beyond one stored
+  placement per detached float.
+- Routing a widget action into a prompt, an agent turn, or a transcript entry.
 - Notification/toast redesign beyond the global-change Undo message.
 - Static source detection of “TUI-looking” packages or supported verbs.
 
@@ -1085,3 +1450,18 @@ No builtin migration batch exists.
 | Desktop settings client/store      | `apps/desktop/src/lib/desktop-settings.ts`, `apps/desktop/src/lib/stores/app-store.ts`                      | strict validation, hydration, idempotent observation, serialized whole-field patches                     |
 | Native settings store              | `apps/desktop/src-tauri/src/desktop_settings.rs`                                                            | mirror defaults/validation/repair/patch/persistence and focused Rust tests                               |
 | Native webviews                    | `apps/desktop/src-tauri/src/browser_surface.rs`                                                             | keep fixed surface; add exclusion rect and reference-counted occlusion guard                             |
+
+### V2 pointers
+
+| Layer                       | Path                                                                                        | Fate                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Float shell and float layer | `apps/desktop/src/features/extensions/ExtensionPresentationMounts.tsx`                      | gains the container split; the shell body is shared by the attached layer and the float window root               |
+| Float geometry              | `apps/desktop/src/lib/extension-ui-float-geometry.ts`                                       | keeps the viewport model for attached floats; gains the screen-space model, monitor matching, and bounds hit-test |
+| Drag state and drop targets | `apps/desktop/src/lib/extension-ui-drag-state.ts`, `extension-ui-drop-target.ts`            | extend to cross-window drags so tear-off and re-attach reuse one legality and highlight path                      |
+| Float window entry point    | `apps/desktop/src/main.tsx` and a new float root under `features/extensions`                | branch on the `surface=float` entry point; mount one slot with no application shell                               |
+| Float window channel        | new module under `apps/desktop/src/lib/`                                                    | forward content and chrome out, intent back; the only bridge between the main window and a float window           |
+| Native window management    | `apps/desktop/src-tauri/src/` (new module), `capabilities/default.json`                     | create/destroy/move float windows, enumerate monitors, orphan cleanup; add the float webview capability entry     |
+| Renderer form               | `apps/desktop/src/lib/extension-ui-renderer-form.ts`                                        | add the `structured` form selected by payload rather than by home                                                 |
+| Structured widget renderer  | `apps/desktop/src/features/extensions/ExtensionWidgetContent.tsx`                           | add host-owned controls; keep every existing text renderer as the fallback path                                   |
+| Widget action contract      | `packages/protocol/src/methods.ts`, `contracts.ts`, `validate.ts`, `dto-validate.ts`, tests | add `extensionUi.widgetAction` with the same session-target context and bounds as `customInput`                   |
+| Widget action bridge        | `packages/pi-host/src/extension-ui-bridge.ts`, `patches/`                                   | add the per-key handler registry and its `ExtensionUIContext` type declaration                                    |

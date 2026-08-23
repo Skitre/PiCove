@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>5b smoke — detached float windows</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111312;
+        color: #e6e8e7;
+        font:
+          13px/1.6 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      #banner {
+        font-size: 22px;
+        font-weight: 700;
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 14px;
+      }
+      .ok {
+        background: #05391f;
+        color: #4ade80;
+      }
+      .bad {
+        background: #3d1113;
+        color: #f87171;
+      }
+      .run {
+        background: #333;
+        color: #fbbf24;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      td {
+        padding: 3px 10px 3px 0;
+        vertical-align: top;
+        border-bottom: 1px solid #23262500;
+      }
+      td.n {
+        color: #8b918e;
+        width: 22em;
+      }
+      .p {
+        color: #4ade80;
+        font-weight: 700;
+      }
+      .f {
+        color: #f87171;
+        font-weight: 700;
+      }
+      #copy {
+        margin-bottom: 14px;
+        padding: 6px 12px;
+        border: 1px solid #3a3f3c;
+        border-radius: 6px;
+        background: #1c1f1e;
+        color: #e6e8e7;
+        font: inherit;
+        cursor: pointer;
+      }
+      pre {
+        color: #8b918e;
+        font-size: 11px;
+        white-space: pre-wrap;
+        margin: 6px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>5b / 5c smoke — detached float windows and the thin-client channel</h1>
+    <div id="banner" class="run">RUNNING…</div>
+    <button id="copy" type="button">Copy results to clipboard</button>
+    <table id="rows"></table>
+    <pre id="detail"></pre>
+
+    <script type="module">
+      // Throwaway smoke harness for batches 5b and 5c. Unit tests cover label
+      // derivation, placement maths, and the message shapes; only a real window
+      // can prove that the Rust command builds one, positions it, that the
+      // float entry point mounts, and that content and intent actually cross
+      // the process boundary in both directions.
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { emit, emitTo, listen } = await import("@tauri-apps/api/event");
+      const rows = document.getElementById("rows");
+      const detail = document.getElementById("detail");
+      const results = [];
+
+      function record(name, pass, note = "") {
+        results.push({ name, pass, note });
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td class="n">${name}</td><td class="${pass ? "p" : "f"}">${
+          pass ? "PASS" : "FAIL"
+        }</td><td>${note}</td>`;
+        rows.appendChild(tr);
+      }
+
+      const SLOT = "pi-subagents:widget";
+      const notes = {};
+
+      // A rerun must not inherit the previous run's window: it would already
+      // hold the same content message, so the terminal would never remount and
+      // the batch would read as a failure it did not actually reproduce.
+      await invoke("extension_float_close", { slotId: SLOT }).catch(() => undefined);
+      const RUN = String(Date.now());
+      notes.run = RUN;
+
+      let monitors = [];
+      try {
+        monitors = await invoke("extension_float_monitors");
+        notes.monitors = monitors;
+        const m = monitors[0];
+        record(
+          "extension_float_monitors",
+          Array.isArray(monitors) && monitors.length > 0 && typeof m?.scaleFactor === "number",
+          monitors.length
+            ? `${monitors.length} display(s), first ${m.size.width}×${m.size.height} logical @${m.scaleFactor}x`
+            : "0 displays — enumeration ran off the main thread?",
+        );
+        record(
+          "monitor reports a work area",
+          Boolean(m?.workArea) && m.workArea.height <= m.size.height,
+          m?.workArea
+            ? `workArea ${m.workArea.width}×${m.workArea.height} @${m.workArea.x},${m.workArea.y}`
+            : "missing — placement would clamp to full bounds",
+        );
+      } catch (error) {
+        record("extension_float_monitors", false, String(error));
+        notes.monitorsError = String(error);
+      }
+
+      // Keep exercising the window path even if enumeration failed, so one
+      // failure never hides the rest of the batch.
+      const wa = monitors[0]?.workArea ?? { x: 0, y: 40, width: 1200, height: 800 };
+      const rect = { x: wa.x + 60, y: wa.y + 60, width: 420, height: 280 };
+      let opened;
+
+      try {
+        opened = await invoke("extension_float_open", {
+          slotId: SLOT,
+          rect,
+          title: "PiDeck float smoke",
+          alwaysOnTop: true,
+        });
+        notes.opened = opened;
+        record(
+          "extension_float_open",
+          typeof opened?.label === "string" && opened.label.startsWith("pideck-float-"),
+          `label ${opened?.label}`,
+        );
+      } catch (error) {
+        record("extension_float_open", false, String(error));
+        notes.openError = String(error);
+      }
+
+      await new Promise((r) => setTimeout(r, 900));
+
+      if (opened) {
+        try {
+          const again = await invoke("extension_float_open", {
+            slotId: SLOT,
+            rect: { ...rect, x: rect.x + 200 },
+            title: "PiDeck float smoke",
+            alwaysOnTop: true,
+          });
+          record(
+            "reopening the same slot reuses its window",
+            again?.label === opened.label,
+            `same label ${again?.label === opened.label}`,
+          );
+        } catch (error) {
+          record("reopening the same slot reuses its window", false, String(error));
+        }
+
+        try {
+          await invoke("extension_float_set_bounds", {
+            slotId: SLOT,
+            rect: { x: wa.x + 320, y: wa.y + 200, width: 480, height: 320 },
+          });
+          record("extension_float_set_bounds", true, "moved and resized");
+        } catch (error) {
+          record("extension_float_set_bounds", false, String(error));
+        }
+
+        try {
+          await invoke("extension_float_set_always_on_top", { slotId: SLOT, alwaysOnTop: false });
+          record("extension_float_set_always_on_top", true, "cleared");
+        } catch (error) {
+          record("extension_float_set_always_on_top", false, String(error));
+        }
+      }
+
+      // --- 5c: the thin-client channel ------------------------------------
+      // Everything below depends on a Float that is really running the float
+      // root, so it is skipped rather than failed when the window never opened.
+      if (opened) {
+        const seen = [];
+        const unlisten = await listen("pideck:float-intent", (event) => seen.push(event.payload));
+        const waitFor = async (kind, ms = 4000) => {
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline) {
+            const hit = seen.find((intent) => intent?.kind === kind);
+            if (hit) return hit;
+            await new Promise((r) => setTimeout(r, 60));
+          }
+          return null;
+        };
+
+        const REQUEST = `smoke-custom-${RUN}`;
+        const content = {
+          slotId: SLOT,
+          family: "custom",
+          chrome: {
+            label: "PiDeck float smoke",
+            language: "en",
+            theme: "dark",
+            themeFamily: "pideck",
+            reducedMotion: false,
+            pinned: false,
+          },
+          body: { kind: "custom", requestId: REQUEST },
+        };
+
+        // Addressed delivery is what the controller actually uses, so try it
+        // first and alone. If nothing comes back, repeat the identical payload
+        // as a broadcast: that splits "the message never crossed" from "it
+        // crossed and the terminal did not mount", which no amount of reading
+        // the code can settle.
+        await emitTo(opened.label, "pideck:float-content", content);
+        let ready = await waitFor("customReady", 6000);
+        notes.readyVia = ready ? "emitTo" : null;
+        if (!ready) {
+          await emit("pideck:float-content", content);
+          ready = await waitFor("customReady", 6000);
+          notes.readyVia = ready ? "emit (broadcast) — addressed delivery is the bug" : "neither";
+        }
+
+        // customReady is the single most informative signal in this batch: it
+        // can only arrive if the content message crossed, the custom body was
+        // routed, xterm mounted under the Float's restricted capability, the
+        // frame subscription was established, and the intent path back works.
+        notes.ready = ready;
+        record(
+          "custom content reaches the float and its terminal reports ready",
+          ready?.slotId === SLOT && ready?.requestId === REQUEST,
+          ready
+            ? `ready for ${ready.requestId} via ${notes.readyVia}`
+            : "no customReady either way",
+        );
+
+        const resize = await waitFor("customResize");
+        notes.resize = resize;
+        record(
+          "the float sizes its own terminal and asks the host to repaint",
+          Number.isInteger(resize?.cols) && resize.cols > 0 && resize.rows > 0,
+          resize ? `${resize.cols}×${resize.rows}` : "no customResize within 4s",
+        );
+
+        let framed = true;
+        try {
+          await emitTo(opened.label, "pideck:float-frame", {
+            slotId: SLOT,
+            requestId: REQUEST,
+            data: "\u001b[2J\u001b[H5c smoke frame — this text is relayed, not rendered locally.\r\n",
+          });
+        } catch (error) {
+          framed = false;
+          notes.frameError = String(error);
+        }
+        record(
+          "a relayed frame is accepted by the float window",
+          framed,
+          framed ? "check the window: the line above should be drawn" : notes.frameError,
+        );
+
+        // A programmatic move must come back as a geometry intent, or a window
+        // dragged to another display would never persist where it landed.
+        await invoke("extension_float_set_bounds", {
+          slotId: SLOT,
+          rect: { x: wa.x + 140, y: wa.y + 140, width: 520, height: 340 },
+        });
+        const geometry = await waitFor("geometry");
+        notes.geometry = geometry;
+        record(
+          "the float reports its own geometry back after it moves",
+          Number.isFinite(geometry?.rect?.x) && geometry.rect.width > 0,
+          geometry
+            ? `${Math.round(geometry.rect.width)}×${Math.round(geometry.rect.height)} @${Math.round(
+                geometry.rect.x,
+              )},${Math.round(geometry.rect.y)}`
+            : "no geometry intent within 4s",
+        );
+
+        // A Float is resized by dragging a window edge, and every report the
+        // main window receives becomes a Host request. Before coalescing, a
+        // single mount produced 17 of them.
+        const resizes = seen.filter((intent) => intent?.kind === "customResize").length;
+        record(
+          "resize reporting is coalesced rather than one request per frame",
+          resizes > 0 && resizes <= 3,
+          `${resizes} customResize intent(s) for one mount and one programmatic move`,
+        );
+
+        unlisten();
+        notes.intents = seen.map((intent) => intent?.kind);
+      }
+
+      let rejected = false;
+      try {
+        await invoke("extension_float_set_bounds", { slotId: "not-open:widget", rect });
+      } catch (error) {
+        rejected = String(error).includes("does not exist");
+        notes.unknownSlotError = String(error);
+      }
+      record(
+        "an unknown slot is rejected, not silently ignored",
+        rejected,
+        notes.unknownSlotError ?? "no error raised",
+      );
+
+      let badSlot = false;
+      try {
+        await invoke("extension_float_open", {
+          slotId: "",
+          rect,
+          title: "x",
+          alwaysOnTop: false,
+        });
+      } catch (error) {
+        badSlot = String(error).includes("invalid");
+        notes.badSlotError = String(error);
+      }
+      record("an invalid slot id is rejected", badSlot, notes.badSlotError ?? "no error raised");
+
+      const passed = results.every((r) => r.pass);
+      const banner = document.getElementById("banner");
+      banner.className = passed ? "ok" : "bad";
+      banner.textContent = passed
+        ? `ALL ${results.length} CHECKS PASSED — float window should be visible`
+        : `${results.filter((r) => !r.pass).length} of ${results.length} CHECKS FAILED`;
+      detail.textContent = JSON.stringify(notes, null, 2);
+
+      // The window this runs in cannot write to a file, so hand the transcript
+      // over the clipboard instead. Behind a click, because a clipboard write
+      // needs a user gesture.
+      const report = JSON.stringify({ banner: banner.textContent, results, notes }, null, 2);
+      const copy = document.getElementById("copy");
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(report);
+          copy.textContent = "Copied — paste it into the session";
+        } catch (error) {
+          copy.textContent = `Copy failed: ${error}`;
+        }
+      });
+    </script>
+  </body>
+</html>
