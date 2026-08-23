@@ -741,3 +741,24 @@
 - Verification: focused suites green; full `pnpm verify:quick` green
   (Desktop 136 files / 920 tests, Pi Host 82 / 761, Protocol build/typecheck).
 - Next phase: A (widget/status renderer forms: strip vs panel/list).
+
+## Session: 2026-08-23 UI polish A
+
+- **Status:** complete (Phase A: widget/status renderer form differentiation)
+- Added `lib/extension-ui-renderer-form.ts` (`rendererFormFor(family, homeKind)` →
+  strip/panel/list per extension-deck.md Renderer registry) with full-matrix unit
+  tests; `SlotBody` and `ExtensionDockArea` now pass form into
+  `ExtensionWidgetRows` / `ExtensionStatusRows`.
+- strip (anchors): collapsed rows show a one-line summary (first non-empty line,
+  truncated, `data-extension-widget-summary`); expand/collapse reuses
+  `collapsedExtensionWidgetKeys` unchanged; expanded keeps the bounded pre.
+- panel (Dock/Float): structured by shape — string → pre-wrap text, `string[]` →
+  line rows, primitive-valued objects → dl key-value rows, others fall back to
+  `<pre>`. New `lib/strip-ansi.ts` strips CSI escapes before panel rendering.
+- status list in Dock (key + wrapping text rows via dl); anchor chip rail
+  untouched. Panel body is text-xs (≥11px) using existing tokens only.
+- Tests: renderer-form (8 combos), strip-ansi, anchor summary/expand, float
+  object key-value rows, dock object rows + ANSI stripping, dock status list.
+- Verification: focused suites green; full `pnpm verify:quick` green
+  (Desktop 138 files / 927 tests, Pi Host 82 / 761, Protocol 6 / 534).
+- Next phase: B (movement interactions: B0 slot context menu, B1 anchor drag-out).
