@@ -14,7 +14,10 @@ import {
   extensionUiFamilyMessageKey,
   extensionUiHomeMessageKey,
 } from "./extension-ui-home-message";
-import { liveExtensionPresentationSlots } from "./extension-ui-live-slots";
+import {
+  canCreateLiveExtensionFloat,
+  liveExtensionPresentationSlots,
+} from "./extension-ui-live-slots";
 import { observedExtensionDisplayName } from "./extension-ui-observation";
 import { detachedHomeForViewportRect, type ViewportRect } from "./extension-float-detach";
 import { isLegalPresentationChoice, presentationHomeFromChoice } from "./extension-ui-presentation";
@@ -111,6 +114,7 @@ export async function detachFocusedExtensionSlot(root?: ParentNode | null): Prom
   const scope = root === undefined ? commandRoot() : root;
   const slot = focusedMovableSlot(scope);
   if (!slot?.extensionId || !canDetachFocusedExtensionSlot(scope)) return false;
+  if (!canCreateLiveExtensionFloat(slot.slotId)) return false;
   const settings = canonicalExtensionUiSettings(useAppStore.getState().desktopSettings);
   const current = slot.mounts[0]?.home;
   const asFloat = presentationHomeFromChoice(slot.family, "float", settings, current);

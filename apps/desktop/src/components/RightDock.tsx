@@ -215,19 +215,26 @@ export function RightDock() {
       setTabOrder((current) => {
         const withoutLegacy = current.filter((tabId) => !String(tabId).startsWith("extension:"));
         if (hasDockedExtensions) {
-          return withoutLegacy.includes("extensions")
+          const next: DockTabId[] = withoutLegacy.includes("extensions")
             ? withoutLegacy
             : [...withoutLegacy, "extensions"];
+          setActiveTab((active) => {
+            if (customJustDocked) return "extensions";
+            if (active?.startsWith("extension:")) return "extensions";
+            return active ?? "extensions";
+          });
+          return next;
         }
-        return withoutLegacy.filter((tabId) => tabId !== "extensions");
-      });
-      setActiveTab((active) => {
-        if (hasDockedExtensions) {
-          if (customJustDocked) return "extensions";
-          if (active?.startsWith("extension:")) return "extensions";
-          return active ?? "extensions";
-        }
-        return active === "extensions" || active?.startsWith("extension:") ? null : active;
+        const removedIndex = current.findIndex(
+          (tabId) => tabId === "extensions" || String(tabId).startsWith("extension:"),
+        );
+        const next = withoutLegacy.filter((tabId) => tabId !== "extensions");
+        setActiveTab((active) =>
+          active === "extensions" || active?.startsWith("extension:")
+            ? (next[Math.min(Math.max(removedIndex, 0), next.length - 1)] ?? null)
+            : active,
+        );
+        return next;
       });
       return;
     }

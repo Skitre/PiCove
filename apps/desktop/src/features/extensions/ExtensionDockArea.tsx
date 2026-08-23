@@ -239,12 +239,16 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                   const next: [number, number] = [nextPrimary, 1 - nextPrimary];
                   setLiveSizes(next);
                   liveSizesRef.current = next;
-                  void persistSizes(next);
+                  void persistSizes(next).finally(() => {
+                    if (liveSizesRef.current !== next) return;
+                    liveSizesRef.current = null;
+                    setLiveSizes((current) => (current === next ? null : current));
+                  });
                 }}
               />
             )}
             <div role="tablist" className="flex shrink-0 gap-1 border-b border-border px-2 pt-1">
-              {group.items.map((item) => {
+              {group.items.map((item, itemIndex) => {
                 const label = slotLabel(item, t);
                 const name = item.extensionId
                   ? observedExtensionDisplayName(item.extensionId)
@@ -263,6 +267,7 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                       type="button"
                       role="tab"
                       aria-selected={selected === item.slotId}
+                      tabIndex={selected === item.slotId ? 0 : -1}
                       data-extension-slot-tab={item.slotId}
                       className="min-w-0 flex-1 truncate px-2 py-1 text-left text-[11px]"
                       onClick={() =>
@@ -283,6 +288,12 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                           ];
                         if (next) {
                           setActive((current) => ({ ...current, [group.id]: next.slotId }));
+                          const tabs = event.currentTarget
+                            .closest('[role="tablist"]')
+                            ?.querySelectorAll<HTMLElement>('[role="tab"]');
+                          tabs?.[
+                            (itemIndex + offset + group.items.length) % group.items.length
+                          ]?.focus();
                         }
                       }}
                       onDragOver={(event) => event.preventDefault()}

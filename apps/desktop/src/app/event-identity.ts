@@ -34,9 +34,6 @@ export function expectedIdentityForEvent(
     case "extensionUi.request":
     case "extensionUi.closed":
     case "extensionUi.groupClosed":
-    case "extensionUi.customStarted":
-    case "extensionUi.customFrame":
-    case "extensionUi.customClosed":
       return host;
     case "session.infoChanged":
     case "session.runtimeChanged":

@@ -4,7 +4,9 @@ import {
   type ExtensionUiSettings,
   type PresentationHome,
 } from "@pideck/protocol";
-import { persistExtensionUiSettings } from "./desktop-settings";
+import { extensionUiHostConfigureParams, persistExtensionUiSettings } from "./desktop-settings";
+import { hostClient } from "./bridge/host-client";
+import { useAppStore } from "./stores/app-store";
 
 export type ExtensionUiUndoEntry = {
   previous: ExtensionUiSettings;
@@ -94,5 +96,38 @@ export async function undoExtensionUiSettings(): Promise<ExtensionUiSettings | n
   if (!entry) return null;
   undoEntry = null;
   emitUndo();
-  return persistExtensionUiSettings(() => entry.previous);
+  const state = useAppStore.getState();
+  const current = state.desktopSettings?.extensionUi;
+  const host = state.host;
+  let configuredHost = false;
+  try {
+    if (host && state.desktopSettings) {
+      const response = await hostClient.request(
+        "extensionUi.configure",
+        { expectedHostInstanceId: host.hostInstanceId },
+        extensionUiHostConfigureParams({
+          ...state.desktopSettings,
+          extensionUi: entry.previous,
+        }),
+      );
+      if (!response.ok) throw new Error(response.error.message);
+      configuredHost = true;
+    }
+    return await persistExtensionUiSettings(() => entry.previous);
+  } catch (error) {
+    // Restore both the Undo offer and the Host projection if persistence lost
+    // the race after a successful configure.
+    if (configuredHost && host && state.desktopSettings && current) {
+      void hostClient
+        .request(
+          "extensionUi.configure",
+          { expectedHostInstanceId: host.hostInstanceId },
+          extensionUiHostConfigureParams({ ...state.desktopSettings, extensionUi: current }),
+        )
+        .catch(() => undefined);
+    }
+    undoEntry = entry;
+    emitUndo();
+    throw error;
+  }
 }

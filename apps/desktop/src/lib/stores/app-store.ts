@@ -101,6 +101,8 @@ type PackageRetryState = {
 
 type ExtensionWidgetState = {
   key: string;
+  /** Internal identity; raw `key` remains extension-visible UI text. */
+  storageKey?: string;
   widget: JsonValue;
   placement?: "aboveEditor" | "belowEditor";
   origin?: ExtensionUiOrigin;
@@ -157,6 +159,16 @@ function clearedExtensionLiveContent() {
     collapsedExtensionWidgetKeys: {} as Record<string, true>,
     lastExtensionWidgetAttentionRunId: null as string | null,
   };
+}
+
+function extensionUiLiveStorageKey(key: string, origin?: ExtensionUiOrigin): string {
+  const extensionId = trustedExtensionId(origin);
+  return extensionId ? `${extensionId}\u0000${key}` : key;
+}
+
+export function extensionUiRawLiveKey(storageKey: string): string {
+  const separator = storageKey.indexOf("\u0000");
+  return separator === -1 ? storageKey : storageKey.slice(separator + 1);
 }
 
 function resetExtensionTerminal(state: {
@@ -978,7 +990,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setExtensionStatus: (key, text, origin) =>
     set((state) => {
-      const statusKey = key || "default";
+      const rawKey = key || "default";
+      const statusKey = extensionUiLiveStorageKey(rawKey, origin);
       const extensionStatuses = { ...state.extensionStatuses };
       const extensionStatusOrigins = { ...state.extensionStatusOrigins };
       if (text?.trim()) {
@@ -1014,7 +1027,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   setExtensionWidget: (extensionWidget) =>
     set((state) => {
-      const key = extensionWidget.key || "default";
+      const rawKey = extensionWidget.key || "default";
+      const key = extensionUiLiveStorageKey(rawKey, extensionWidget.origin);
       if (extensionWidget.widget === null) {
         const extensionWidgets = { ...state.extensionWidgets };
         const collapsedExtensionWidgetKeys = { ...state.collapsedExtensionWidgetKeys };
@@ -1028,7 +1042,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         extensionWidgets: {
           ...state.extensionWidgets,
-          [key]: { ...extensionWidget, key },
+          [key]: { ...extensionWidget, key: rawKey, storageKey: key },
         },
       };
     }),

@@ -37,7 +37,10 @@ import {
   presentationHomeFromChoice,
 } from "../../lib/extension-ui-presentation";
 import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
-import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
+import {
+  canCreateLiveExtensionFloat,
+  useLiveExtensionPresentationSlots,
+} from "../../lib/extension-ui-live-slots";
 import {
   clearExtensionUiUndo,
   commitExtensionPresentationHome,
@@ -145,7 +148,9 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
   ).filter(({ mount }) => Boolean(mount.widgets?.length));
   if (mounts.length === 0) return null;
   const collapsed = mounts.every(({ mount }) =>
-    (mount.widgets ?? []).every((widget) => collapsedWidgetKeys[widget.key] === true),
+    (mount.widgets ?? []).every(
+      (widget) => collapsedWidgetKeys[widget.storageKey ?? widget.key] === true,
+    ),
   );
   const label =
     slot === "belowComposer" ? t("extensionUiAnchorBelow") : t("extensionUiAnchorAbove");
@@ -270,6 +275,7 @@ function AnchorSlotRow({
       return;
     }
     // A drop on empty space floats the widget at the pointer with the default size.
+    if (!canCreateLiveExtensionFloat(slot.slotId)) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const pixel = clampAndSnapFloatRect(
       { left: clientX - 180, top: clientY - 24, width: 360, height: 240 },
@@ -761,6 +767,7 @@ function ExtensionFloatShell({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (
           event.key !== "ArrowLeft" &&
           event.key !== "ArrowRight" &&
@@ -792,6 +799,7 @@ function ExtensionFloatShell({
         );
       }}
       onKeyUp={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key.startsWith("Arrow")) void persistRect(pixel);
       }}
     >

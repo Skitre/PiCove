@@ -7,6 +7,7 @@ import {
   activateAdjacentExtensionDockTab,
   canDetachFocusedExtensionSlot,
   canMoveFocusedExtensionSlot,
+  detachFocusedExtensionSlot,
   focusAdjacentExtensionFloat,
   hasExtensionDockSplit,
   moveFocusedExtensionSlot,
@@ -226,5 +227,48 @@ describe("extension UI commands", () => {
     // in-window layer does not draw the slot at all.
     setHome({ kind: "float", rect, detached });
     expect(canDetachFocusedExtensionSlot()).toBe(false);
+  });
+
+  it("rejects a ninth Float before writing a latent profile", async () => {
+    const presentations: Record<string, { widget: { home: PresentationHome } }> = {};
+    for (let index = 0; index < 9; index += 1) {
+      const extensionId = `ext-${index}`;
+      presentations[extensionId] = {
+        widget: {
+          home:
+            index < 8
+              ? { kind: "float", rect: { x: 0.1, y: 0.1, width: 300, height: 180 } }
+              : { kind: "anchor", slot: "aboveComposer" },
+        },
+      };
+      useAppStore.getState().setExtensionWidget({
+        key: "fleet",
+        widget: [extensionId],
+        origin: {
+          invocationKind: "background",
+          extensionId,
+          extensionDisplayName: extensionId,
+          sourceKind: "package",
+        },
+        hostInstanceId: "h1",
+        workspaceId: "w1",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      });
+    }
+    useAppStore.getState().setDesktopSettings({
+      ...baseSettings(),
+      extensionUi: { ...DEFAULT_EXTENSION_UI_SETTINGS, presentations },
+    });
+    const target = document.createElement("button");
+    target.dataset.extensionSlot = "ext-8:widget";
+    document.body.append(target);
+    target.focus();
+
+    expect(await detachFocusedExtensionSlot()).toBe(false);
+    expect(
+      useAppStore.getState().desktopSettings?.extensionUi?.presentations["ext-8"]?.widget?.home,
+    ).toEqual({ kind: "anchor", slot: "aboveComposer" });
   });
 });

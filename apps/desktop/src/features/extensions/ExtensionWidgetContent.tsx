@@ -101,15 +101,18 @@ export function ExtensionWidgetRows({
     <div className="flex flex-col gap-1">
       {widgets.map((entry) => (
         <WidgetRow
-          key={entry.key}
+          key={entry.storageKey ?? entry.key}
           entry={entry}
           form={form}
-          collapsed={collapsedWidgetKeys[entry.key] === true}
-          onToggle={() => onToggleCollapsed(entry.key)}
+          collapsed={collapsedWidgetKeys[entry.storageKey ?? entry.key] === true}
+          onToggle={() => onToggleCollapsed(entry.storageKey ?? entry.key)}
           label={t("extWidgetLabel", { key: entry.key })}
-          toggleLabel={t(collapsedWidgetKeys[entry.key] ? "extWidgetExpand" : "extWidgetCollapse", {
-            key: entry.key,
-          })}
+          toggleLabel={t(
+            collapsedWidgetKeys[entry.storageKey ?? entry.key]
+              ? "extWidgetExpand"
+              : "extWidgetCollapse",
+            { key: entry.key },
+          )}
         />
       ))}
     </div>

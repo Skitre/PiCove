@@ -10,18 +10,25 @@ export function shouldKeepNativeContextMenu(
 ): boolean {
   return Boolean(
     (dev && event.shiftKey) ||
-      (event.target instanceof Element && event.target.closest("[data-tauri-drag-region]")),
+    (event.target instanceof Element && event.target.closest("[data-tauri-drag-region]")),
   );
+}
+
+export function shouldOpenFallbackContextMenu(
+  event: Pick<MouseEvent, "defaultPrevented" | "shiftKey" | "target">,
+  dev = import.meta.env.DEV,
+): boolean {
+  return !event.defaultPrevented && !shouldKeepNativeContextMenu(event, dev);
 }
 
 export function ContextMenuPolicy() {
   const t = useT();
   useEffect(() => {
-    const suppressDefault = (event: MouseEvent) => {
-      if (!shouldKeepNativeContextMenu(event)) event.preventDefault();
-    };
     const openFallback = (event: MouseEvent) => {
-      if (shouldKeepNativeContextMenu(event)) return;
+      // Feature-owned context menus run before this window fallback. Respect
+      // their cancellation instead of opening a second menu on top.
+      if (!shouldOpenFallbackContextMenu(event)) return;
+      event.preventDefault();
       const textTarget = resolveTextMenuTarget(event.target);
       if (textTarget) {
         openContextMenu({
@@ -48,10 +55,8 @@ export function ContextMenuPolicy() {
         ],
       });
     };
-    window.addEventListener("contextmenu", suppressDefault, true);
     window.addEventListener("contextmenu", openFallback);
     return () => {
-      window.removeEventListener("contextmenu", suppressDefault, true);
       window.removeEventListener("contextmenu", openFallback);
     };
   }, [t]);

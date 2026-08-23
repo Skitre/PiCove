@@ -118,6 +118,20 @@ describe("expectedIdentityForEvent", () => {
     );
   });
 
+  it.each([
+    "extensionUi.customStarted",
+    "extensionUi.customFrame",
+    "extensionUi.customClosed",
+  ] as const)("rejects background %s events from the focused custom surface", (name) => {
+    const incoming = event(name, {
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      sessionRevision: state.sessionRevision + 1,
+    });
+    expect(client.shouldAcceptEvent(incoming, expectedIdentityForEvent(incoming, state))).toBe(
+      false,
+    );
+  });
+
   it("accepts tools immediately after an authoritative Session transition", () => {
     const nextSession: SessionSnapshot = {
       sessionId: "55555555-5555-4555-8555-555555555555",

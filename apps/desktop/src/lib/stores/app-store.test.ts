@@ -427,6 +427,40 @@ describe("app-store epoch wiring", () => {
     expect(useAppStore.getState().extensionStatus).toBe("Planning");
   });
 
+  it("isolates identical live keys from different trusted Extensions", () => {
+    const originA = {
+      invocationKind: "background" as const,
+      extensionId: "ext-a",
+      extensionDisplayName: "A",
+      sourceKind: "package" as const,
+    };
+    const originB = { ...originA, extensionId: "ext-b", extensionDisplayName: "B" };
+    useAppStore.getState().setExtensionStatus("state", "A ready", originA);
+    useAppStore.getState().setExtensionStatus("state", "B ready", originB);
+    expect(Object.values(useAppStore.getState().extensionStatuses)).toEqual(["A ready", "B ready"]);
+
+    const baseWidget = {
+      key: "summary",
+      hostInstanceId: "h1",
+      workspaceId: "w",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+    };
+    useAppStore.getState().setExtensionWidget({ ...baseWidget, widget: ["A"], origin: originA });
+    useAppStore.getState().setExtensionWidget({ ...baseWidget, widget: ["B"], origin: originB });
+    expect(
+      Object.values(useAppStore.getState().extensionWidgets).map((entry) => entry.widget),
+    ).toEqual([["A"], ["B"]]);
+
+    useAppStore.getState().setExtensionStatus("state", "", originA);
+    useAppStore.getState().setExtensionWidget({ ...baseWidget, widget: null, origin: originA });
+    expect(Object.values(useAppStore.getState().extensionStatuses)).toEqual(["B ready"]);
+    expect(
+      Object.values(useAppStore.getState().extensionWidgets).map((entry) => entry.widget),
+    ).toEqual([["B"]]);
+  });
+
   it("queues concurrent Extension UI requests with their response contexts", () => {
     const context = {
       expectedHostInstanceId: "11111111-1111-4111-8111-111111111111",

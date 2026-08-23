@@ -19,6 +19,7 @@ import { commitExtensionPresentationHome } from "../../lib/extension-ui-profile"
 import { detachedHomeForViewportRect, type ViewportRect } from "../../lib/extension-float-detach";
 import type { Translate } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
+import { canCreateLiveExtensionFloat } from "../../lib/extension-ui-live-slots";
 
 export type ExtensionSlotMenuFamily = "widget" | "status" | "custom";
 
@@ -94,6 +95,7 @@ function detachItems(
   if (!extensionId) return [];
   if (family !== "widget" && family !== "custom") return [];
   if (currentHome.kind === "float" && currentHome.detached) return [];
+  if (!canCreateLiveExtensionFloat(`${extensionId}:${family}`)) return [];
   const anchor = floatAnchorRect(input.event.target);
   return [
     {

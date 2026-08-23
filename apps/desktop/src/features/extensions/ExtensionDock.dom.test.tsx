@@ -254,9 +254,11 @@ describe("RightDock extension-deck-v1", () => {
     expect(document.querySelector("[data-extension-dock-area]")).toBeNull();
   });
 
-  it("shows the Extensions tab only while the current session has docked content", () => {
+  it("shows Extensions only while docked content is live and selects its neighbour on removal", async () => {
     resetExtensionDeckV1GateForTests(true);
+    const user = (await import("@testing-library/user-event")).default.setup();
     render(<RightDock />);
+    await user.click(screen.getByRole("button", { name: "Open Files" }));
     expect(screen.queryByRole("tab", { name: "Extensions" })).not.toBeInTheDocument();
 
     act(() => {
@@ -289,6 +291,11 @@ describe("RightDock extension-deck-v1", () => {
     });
 
     expect(screen.getByRole("tab", { name: "Extensions" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Extensions" }));
+    expect(screen.getByRole("tab", { name: "Extensions" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByText("ready")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Close .+ Widget/ })).not.toBeInTheDocument();
 
@@ -306,6 +313,7 @@ describe("RightDock extension-deck-v1", () => {
     });
 
     expect(screen.queryByRole("tab", { name: "Extensions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
     expect(
       useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
         ?.home,
@@ -390,6 +398,7 @@ describe("RightDock extension-deck-v1", () => {
     firstTab.focus();
     await user.keyboard("{ArrowRight}");
     expect(secondTab).toHaveAttribute("aria-selected", "true");
+    expect(secondTab).toHaveFocus();
 
     const transfer = {
       data: {} as Record<string, string>,
@@ -414,6 +423,28 @@ describe("RightDock extension-deck-v1", () => {
     expect(
       useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-review"]?.widget?.home,
     ).toMatchObject({ kind: "dock", group: "secondary" });
+
+    const separator = document.querySelector<HTMLElement>(
+      "[data-extension-dock-area] [role='separator']",
+    )!;
+    separator.focus();
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => {
+      const sizes = useAppStore.getState().desktopSettings?.extensionUi?.dock.sizes;
+      expect(sizes?.[0]).toBeCloseTo(0.55);
+      expect(sizes?.[1]).toBeCloseTo(0.45);
+    });
+    act(() => {
+      const current = useAppStore.getState().desktopSettings!;
+      useAppStore.getState().setDesktopSettings({
+        ...current,
+        extensionUi: {
+          ...current.extensionUi!,
+          dock: { ...current.extensionUi!.dock, sizes: [0.3, 0.7] },
+        },
+      });
+    });
+    expect(separator).toHaveAttribute("aria-valuenow", "30");
   });
 
   it("highlights dock drop targets during an HTML5 drag and clears it on dragend", () => {

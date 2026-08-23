@@ -1,12 +1,14 @@
+import { MAX_EXTENSION_UI_FLOATS } from "@pideck/protocol";
 import { canonicalExtensionUiSettings } from "./desktop-settings";
 import {
   buildExtensionPresentationSlots,
+  countLiveFloatMounts,
   type ExtensionPresentationSlot,
   type LiveCustomContent,
   type LiveStatusContent,
   type LiveWidgetContent,
 } from "./extension-ui-slots";
-import { useAppStore } from "./stores/app-store";
+import { extensionUiRawLiveKey, useAppStore } from "./stores/app-store";
 
 export function useLiveExtensionPresentationSlots(): ExtensionPresentationSlot[] {
   useAppStore((state) => state.extensionWidgets);
@@ -21,13 +23,14 @@ export function liveExtensionPresentationSlots(): ExtensionPresentationSlot[] {
   const state = useAppStore.getState();
   const widgets: LiveWidgetContent[] = Object.values(state.extensionWidgets).map((widget) => ({
     key: widget.key,
+    storageKey: widget.storageKey,
     widget: widget.widget,
     placement: widget.placement,
     origin: widget.origin,
   }));
   const statuses: LiveStatusContent[] = Object.entries(state.extensionStatuses).map(
     ([key, text]) => ({
-      key,
+      key: extensionUiRawLiveKey(key),
       text,
       origin: state.extensionStatusOrigins[key],
     }),
@@ -46,4 +49,12 @@ export function liveExtensionPresentationSlots(): ExtensionPresentationSlot[] {
     statuses,
     custom,
   });
+}
+
+/** One guard shared by every interaction that can create a new live Float. */
+export function canCreateLiveExtensionFloat(slotId: string): boolean {
+  const slots = liveExtensionPresentationSlots();
+  const current = slots.find((slot) => slot.slotId === slotId);
+  if (current?.mounts.some((mount) => mount.home.kind === "float")) return true;
+  return countLiveFloatMounts(slots) < MAX_EXTENSION_UI_FLOATS;
 }

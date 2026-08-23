@@ -19,6 +19,7 @@ import {
 
 export type LiveWidgetContent = {
   key: string;
+  storageKey?: string;
   widget: unknown;
   placement?: "aboveEditor" | "belowEditor";
   origin?: ExtensionUiOrigin;

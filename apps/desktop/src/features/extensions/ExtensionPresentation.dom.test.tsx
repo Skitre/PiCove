@@ -994,6 +994,19 @@ describe("Extension presentation mounts", () => {
     await waitFor(() => expect(button).not.toBeDisabled());
   });
 
+  it("does not move a custom Float when arrow keys originate inside its terminal", () => {
+    mountCustomFloat();
+    render(<ChatPage />);
+    const dialog = screen.getByRole("dialog", { name: "pi-subagents Custom UI" });
+    const left = dialog.style.left;
+    const terminal = screen.getByTestId("float-extension-terminal");
+
+    fireEvent.keyDown(terminal, { key: "ArrowRight" });
+    fireEvent.keyUp(terminal, { key: "ArrowRight" });
+
+    expect(dialog.style.left).toBe(left);
+  });
+
   it("does not remount builtin chat chrome when only Extension content changes", () => {
     render(<ChatPage />);
     const page = document.querySelector("[data-chat-page]");

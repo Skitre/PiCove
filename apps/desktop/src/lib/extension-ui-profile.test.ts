@@ -2,6 +2,7 @@ import { DEFAULT_EXTENSION_UI_SETTINGS } from "@pideck/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "./stores/app-store";
 import { persistExtensionUiSettings } from "./desktop-settings";
+import { hostClient } from "./bridge/host-client";
 import {
   clearExtensionUiUndo,
   commitExtensionPresentationHome,
@@ -22,6 +23,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   mocks.invoke.mockReset();
   mocks.isTauri.mockReset();
   mocks.isTauri.mockReturnValue(false);
@@ -34,6 +36,7 @@ beforeEach(() => {
     terminalProfile: "auto",
     extensionUi: DEFAULT_EXTENSION_UI_SETTINGS,
   });
+  useAppStore.setState({ host: null });
 });
 
 describe("extension UI profile writes", () => {
@@ -78,6 +81,25 @@ describe("extension UI profile writes", () => {
       DEFAULT_EXTENSION_UI_SETTINGS,
     );
     expect(getExtensionUiUndo()).toBeNull();
+  });
+
+  it("synchronizes blocking-dialog overrides to the Host during Undo", async () => {
+    await commitExtensionPresentationHome({
+      extensionId: "pi-review",
+      family: "blockingDialog",
+      home: { kind: "modal" },
+      message: "Review decisions now open as modal",
+    });
+    useAppStore.setState({ host: { hostInstanceId: "host-1" } as never });
+    const request = vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true } as never);
+
+    await undoExtensionUiSettings();
+
+    expect(request).toHaveBeenCalledWith(
+      "extensionUi.configure",
+      { expectedHostInstanceId: "host-1" },
+      expect.objectContaining({ extensionDialogPresentationOverrides: {} }),
+    );
   });
 
   it("merges a queued profile commit with an observation and preserves it through Undo", async () => {
