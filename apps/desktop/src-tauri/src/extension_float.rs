@@ -146,6 +146,11 @@ impl ExtensionFloatManager {
         always_on_top: bool,
     ) -> Result<FloatWindowSnapshot, String> {
         validate_slot_id(slot_id)?;
+        // Native windows can disappear outside the controller (renderer
+        // crash, platform teardown). Do not let stale bookkeeping consume the
+        // process-wide Float cap forever.
+        self.windows
+            .retain(|_, label| app.get_webview_window(label).is_some());
         let label = float_window_label(slot_id);
         if let Some(existing) = app.get_webview_window(&label) {
             // Reopening a live slot repositions it rather than stacking a second
@@ -231,6 +236,15 @@ impl ExtensionFloatManager {
         self.window(app, slot_id)?
             .set_focus()
             .map_err(|error| error.to_string())
+    }
+
+    pub fn slot_for_window_label(&self, app: &AppHandle, label: &str) -> Option<String> {
+        if !is_float_window_label(label) || app.get_webview_window(label).is_none() {
+            return None;
+        }
+        self.windows
+            .iter()
+            .find_map(|(slot_id, registered)| (registered == label).then(|| slot_id.clone()))
     }
 
     fn window(&self, app: &AppHandle, slot_id: &str) -> Result<tauri::WebviewWindow, String> {

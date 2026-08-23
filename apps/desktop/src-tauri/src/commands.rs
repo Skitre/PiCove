@@ -10,12 +10,16 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, Emitter, State};
+
+const MAIN_WINDOW_LABEL: &str = "main";
 
 #[tauri::command]
 pub async fn desktop_settings_get(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
 ) -> Result<DesktopSettingsSnapshot, String> {
+    require_main_webview(&webview)?;
     let store = state.settings.lock().await;
     Ok(store.snapshot())
 }
@@ -39,24 +43,29 @@ pub async fn desktop_settings_patch(
 
 #[tauri::command]
 pub async fn desktop_drafts_get(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     canonical_cwd: String,
 ) -> Result<DraftWorkspaceSnapshot, String> {
+    require_main_webview(&webview)?;
     let mut store = state.drafts.lock().await;
     store.workspace_snapshot(&canonical_cwd)
 }
 
 #[tauri::command]
 pub async fn desktop_drafts_apply(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     mutations: Vec<DraftMutation>,
 ) -> Result<DraftApplyResult, String> {
+    require_main_webview(&webview)?;
     let mut store = state.drafts.lock().await;
     store.apply(mutations)
 }
 
 #[tauri::command]
-pub async fn desktop_open_path(path: String) -> Result<(), String> {
+pub async fn desktop_open_path(webview: tauri::Webview, path: String) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let target = validate_open_path(&path)?;
     open_in_file_manager(target)
 }
@@ -79,7 +88,11 @@ pub struct DesktopSmallFile {
 }
 
 #[tauri::command]
-pub fn desktop_read_small_file(path: String) -> Result<DesktopSmallFile, String> {
+pub fn desktop_read_small_file(
+    webview: tauri::Webview,
+    path: String,
+) -> Result<DesktopSmallFile, String> {
+    require_main_webview(&webview)?;
     read_small_file(&path)
 }
 
@@ -182,11 +195,15 @@ fn looks_binary_text(text: &str) -> bool {
 /// store. Capabilities already withhold the core permissions from those
 /// webviews; this is the matching guard for application-defined commands, which
 /// capabilities do not gate.
-fn require_main_webview(webview: &tauri::Webview) -> Result<(), String> {
-    if crate::extension_float::is_float_window_label(webview.window().label()) {
-        return Err("this command is not available to an extension float window".to_string());
+fn require_main_webview_label(label: &str) -> Result<(), String> {
+    if label != MAIN_WINDOW_LABEL {
+        return Err("this command is only available to the main window".to_string());
     }
     Ok(())
+}
+
+fn require_main_webview(webview: &tauri::Webview) -> Result<(), String> {
+    require_main_webview_label(webview.window().label())
 }
 
 #[tauri::command]
@@ -201,19 +218,28 @@ pub async fn pi_host_send(
 }
 
 #[tauri::command]
-pub async fn pi_host_restart(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn pi_host_restart(
+    webview: tauri::Webview,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
     // Holds the host mutex only for spawn/commit, not across the ready-wait.
     crate::pi_host::start_unlocked(&state.host, crate::pi_host::StartKind::ManualRestart).await
 }
 
 #[tauri::command]
-pub async fn pi_host_status(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn pi_host_status(
+    webview: tauri::Webview,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    require_main_webview(&webview)?;
     let mut host = state.host.lock().await;
     Ok(host.is_running())
 }
 
 #[tauri::command]
 pub async fn shell_terminal_create(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     cwd: String,
     cols: u16,
@@ -221,21 +247,27 @@ pub async fn shell_terminal_create(
     profile_id: String,
     on_event: Channel<ShellTerminalEvent>,
 ) -> Result<ShellTerminalCreateResult, String> {
+    require_main_webview(&webview)?;
     let mut terminals = state.terminals.lock().await;
     terminals.create(&cwd, cols, rows, &profile_id, on_event)
 }
 
 #[tauri::command]
-pub async fn shell_terminal_profiles() -> Result<ShellProfileCatalog, String> {
+pub async fn shell_terminal_profiles(
+    webview: tauri::Webview,
+) -> Result<ShellProfileCatalog, String> {
+    require_main_webview(&webview)?;
     shell_profile_catalog()
 }
 
 #[tauri::command]
 pub async fn shell_terminal_write(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     terminal_id: String,
     data: String,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     // A completion may wait on PTY capacity; only enqueue while holding the manager lock.
     let completion = {
         let terminals = state.terminals.lock().await;
@@ -248,26 +280,31 @@ pub async fn shell_terminal_write(
 
 #[tauri::command]
 pub async fn shell_terminal_resize(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     terminal_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let terminals = state.terminals.lock().await;
     terminals.resize(&terminal_id, cols, rows)
 }
 
 #[tauri::command]
 pub async fn shell_terminal_close(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     terminal_id: String,
 ) -> Result<bool, String> {
+    require_main_webview(&webview)?;
     let mut terminals = state.terminals.lock().await;
     Ok(terminals.close(&terminal_id))
 }
 
 #[tauri::command]
 pub async fn browser_surface_create(
+    webview: tauri::Webview,
     app: AppHandle,
     state: State<'_, AppState>,
     surface_id: String,
@@ -275,64 +312,77 @@ pub async fn browser_surface_create(
     bounds: BrowserSurfaceBounds,
     visible: bool,
 ) -> Result<BrowserSurfaceSnapshot, String> {
+    require_main_webview(&webview)?;
     let mut browsers = state.browsers.lock().await;
     browsers.create(&app, &surface_id, &url, bounds, visible)
 }
 
 #[tauri::command]
 pub async fn browser_surface_navigate(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
     url: String,
 ) -> Result<String, String> {
+    require_main_webview(&webview)?;
     let browsers = state.browsers.lock().await;
     browsers.navigate(&surface_id, &url)
 }
 
 #[tauri::command]
 pub async fn browser_surface_control(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
     action: String,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let browsers = state.browsers.lock().await;
     browsers.control(&surface_id, &action)
 }
 
 #[tauri::command]
 pub async fn browser_surface_set_bounds(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
     bounds: BrowserSurfaceBounds,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let mut browsers = state.browsers.lock().await;
     browsers.set_bounds(&surface_id, bounds)
 }
 
 #[tauri::command]
 pub async fn browser_surface_set_visible(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
     visible: bool,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let mut browsers = state.browsers.lock().await;
     browsers.set_visible(&surface_id, visible)
 }
 
 #[tauri::command]
 pub async fn browser_surface_focus(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
 ) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let browsers = state.browsers.lock().await;
     browsers.focus(&surface_id)
 }
 
 #[tauri::command]
 pub async fn browser_surface_close(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     surface_id: String,
 ) -> Result<bool, String> {
+    require_main_webview(&webview)?;
     let mut browsers = state.browsers.lock().await;
     browsers.close(&surface_id)
 }
@@ -431,6 +481,30 @@ pub async fn extension_float_close_all(
     let mut floats = state.floats.lock().await;
     floats.destroy_all(&app);
     Ok(())
+}
+
+/// Float → main intent relay. The caller cannot choose its slot identity:
+/// Rust derives it from the registered native window label and overwrites any
+/// payload value before addressing the event only to the main webview.
+#[tauri::command]
+pub async fn extension_float_intent(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mut intent: Value,
+) -> Result<(), String> {
+    let slot_id = {
+        let floats = state.floats.lock().await;
+        floats
+            .slot_for_window_label(&app, webview.window().label())
+            .ok_or_else(|| "extension float window is not registered".to_string())?
+    };
+    let object = intent
+        .as_object_mut()
+        .ok_or_else(|| "extension float intent must be an object".to_string())?;
+    object.insert("slotId".to_string(), Value::String(slot_id));
+    app.emit_to(MAIN_WINDOW_LABEL, "pideck:float-intent", intent)
+        .map_err(|error| error.to_string())
 }
 
 /// What the file manager should do with a validated local path.
@@ -550,6 +624,14 @@ mod tests {
         assert!(validate_open_path("   ").is_err());
         assert!(validate_open_path("relative/dir").is_err());
         assert!(validate_open_path("./here").is_err());
+    }
+
+    #[test]
+    fn application_commands_accept_only_the_exact_main_window_label() {
+        assert!(require_main_webview_label("main").is_ok());
+        assert!(require_main_webview_label("pideck-float-deadbeef").is_err());
+        assert!(require_main_webview_label("browser-surface-1").is_err());
+        assert!(require_main_webview_label("main-preview").is_err());
     }
 
     #[test]

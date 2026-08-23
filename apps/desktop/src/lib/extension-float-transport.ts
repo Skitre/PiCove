@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emit, emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import type { MonitorDescriptor, ScreenRect } from "@pideck/protocol";
 import {
   FLOAT_CONTENT_EVENT,
@@ -25,14 +25,14 @@ function isDesktopRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-export async function listFloatMonitors(): Promise<MonitorDescriptor[]> {
+export async function listFloatMonitors(): Promise<MonitorDescriptor[] | null> {
   if (!isDesktopRuntime()) return [];
   try {
     return await invoke<MonitorDescriptor[]>("extension_float_monitors");
   } catch {
-    // A Float that cannot be placed stays attached; callers treat an empty
-    // monitor list exactly like "this placement no longer resolves".
-    return [];
+    // Enumeration failure is different from a real empty topology: callers
+    // retain the last known displays and retry instead of tearing windows down.
+    return null;
   }
 }
 
@@ -91,7 +91,7 @@ export async function publishFloatFrame(label: string, message: FloatFrameMessag
 /** Float window → main window. */
 export async function sendFloatIntent(intent: FloatIntent): Promise<void> {
   if (!isDesktopRuntime()) return;
-  await emit(FLOAT_INTENT_EVENT, intent).catch(() => undefined);
+  await invoke("extension_float_intent", { intent }).catch(() => undefined);
 }
 
 export async function subscribeFloatContent(

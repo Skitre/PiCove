@@ -2,11 +2,9 @@ import type { DetachedFloatPlacement, MonitorDescriptor, ScreenRect } from "@pid
 
 /**
  * Detached Float placement geometry (extension-deck.md, "Detached placement and
- * monitor recovery"). Every value here is in **logical** pixels — the platform's
- * global desktop space divided by each monitor's scale factor — so one space
- * covers every display and no call site has to remember which unit it holds.
- * Conversion to and from the platform's physical pixels happens once, at the
- * window-management boundary.
+ * monitor recovery"). Every value here is in **logical** pixels. The Rust
+ * monitor command converts Tauri's physical descriptors exactly once before
+ * they cross the IPC boundary; this layer must not divide them a second time.
  *
  * Pure functions only. A detached Float is positioned from these results; none
  * of them touch a window, the DOM, or settings.
@@ -32,12 +30,11 @@ export type DetachedPlacementResolution =
 
 /** The monitor's own bounds, in the same logical space as a detached rect. */
 export function monitorLogicalBounds(monitor: MonitorDescriptor): ScreenRect {
-  const scale = monitor.scaleFactor > 0 ? monitor.scaleFactor : 1;
   return {
-    x: monitor.position.x / scale,
-    y: monitor.position.y / scale,
-    width: monitor.size.width / scale,
-    height: monitor.size.height / scale,
+    x: monitor.position.x,
+    y: monitor.position.y,
+    width: monitor.size.width,
+    height: monitor.size.height,
   };
 }
 

@@ -61,7 +61,13 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
       document.title = next.chrome.label;
     }).then((unlisten) => {
       if (cancelled) unlisten();
-      else dispose = unlisten;
+      else {
+        dispose = unlisten;
+        // Only now can a message land. Content is pushed on change, so a window
+        // that reloaded would otherwise sit empty forever: the main window has
+        // already sent this slot's content and will not send it again.
+        void sendFloatIntent({ kind: "hello", slotId });
+      }
     });
     return () => {
       cancelled = true;
@@ -115,14 +121,24 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
       try {
         const unlistenMoved = await current.onMoved(commit);
         const unlistenResized = await current.onResized(commit);
+        const unlistenClose = await current.onCloseRequested((event) => {
+          // Native destruction would bypass the main-window owner and leave a
+          // live custom() promise plus stale manager state. Route the same
+          // close intent as the title-bar button; the controller destroys the
+          // native window after the content/promise has settled.
+          event.preventDefault();
+          void sendFloatIntent({ kind: "close", slotId });
+        });
         if (cancelled) {
           unlistenMoved();
           unlistenResized();
+          unlistenClose();
           return;
         }
         dispose = () => {
           unlistenMoved();
           unlistenResized();
+          unlistenClose();
         };
       } catch {
         // A window that cannot report its own geometry simply keeps the

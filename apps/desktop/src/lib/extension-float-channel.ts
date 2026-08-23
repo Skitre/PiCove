@@ -66,6 +66,13 @@ export type FloatContentMessage = {
 };
 
 export type FloatIntent =
+  /**
+   * This window is mounted and listening. Sent on mount and again after any
+   * reload, because content is only pushed when it changes — without this a
+   * reloaded Float would wait forever for a message the main window has
+   * already decided it does not need to re-send.
+   */
+  | { kind: "hello"; slotId: string }
   | { kind: "close"; slotId: string }
   | { kind: "togglePin"; slotId: string }
   /** The user moved or resized the window; the main window persists it. */

@@ -12,6 +12,28 @@ const transport = vi.hoisted(() => ({
   content: null as ((message: FloatContentMessage) => void) | null,
 }));
 
+const nativeWindow = vi.hoisted(() => ({
+  closeRequested: null as ((event: { preventDefault: () => void }) => void) | null,
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    outerPosition: () => Promise.resolve({ x: 0, y: 0 }),
+    outerSize: () => Promise.resolve({ width: 400, height: 300 }),
+    scaleFactor: () => Promise.resolve(1),
+    onMoved: () => Promise.resolve(() => {}),
+    onResized: () => Promise.resolve(() => {}),
+    onCloseRequested: (handler: (event: { preventDefault: () => void }) => void) => {
+      nativeWindow.closeRequested = handler;
+      return Promise.resolve(() => {
+        nativeWindow.closeRequested = null;
+      });
+    },
+    startDragging: () => Promise.resolve(),
+    setTheme: () => Promise.resolve(),
+  }),
+}));
+
 vi.mock("../../lib/extension-float-transport", () => ({
   sendFloatIntent: (intent: FloatIntent) => {
     transport.intents.push(intent);
@@ -62,6 +84,7 @@ async function publish(message: FloatContentMessage) {
 beforeEach(() => {
   transport.intents.length = 0;
   transport.content = null;
+  nativeWindow.closeRequested = null;
 });
 
 afterEach(() => {
@@ -105,7 +128,7 @@ describe("FloatWindowRoot placement", () => {
     );
     await userEvent.click(screen.getByRole("menuitem", { name: "Extensions Dock · primary" }));
 
-    expect(transport.intents).toEqual([
+    expect(transport.intents.filter((intent) => intent.kind !== "hello")).toEqual([
       { kind: "setPlacement", slotId: SLOT, choice: "dockPrimary" },
     ]);
   });
@@ -121,11 +144,32 @@ describe("FloatWindowRoot placement", () => {
     expect(screen.getByRole("menuitem", { name: "Follow Extension" })).toBeInTheDocument();
   });
 
-  it("does nothing before any content has arrived, having no family to offer", async () => {
+  it("reports in on mount, so a reloaded window is sent content it was already sent once", async () => {
+    // Content is pushed only when it changes. Without this greeting a window
+    // that reloaded would wait forever for a message the main window has
+    // already decided it does not need to re-send — and its placement button,
+    // having no family to name, would open nothing.
+    render(<FloatWindowRoot slotId={SLOT} />);
+    await act(async () => {});
+    expect(transport.intents).toEqual([{ kind: "hello", slotId: SLOT }]);
+  });
+
+  it("routes the OS close request through the main-window owner", async () => {
+    render(<FloatWindowRoot slotId={SLOT} />);
+    await act(async () => {});
+    const preventDefault = vi.fn();
+
+    act(() => nativeWindow.closeRequested?.({ preventDefault }));
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(transport.intents).toContainEqual({ kind: "close", slotId: SLOT });
+  });
+
+  it("offers nothing before any content has arrived, having no family to name", async () => {
     render(<FloatWindowRoot slotId={SLOT} />);
     await userEvent.click(screen.getByRole("button", { name: `Change where ${SLOT} is shown` }));
     expect(screen.queryByRole("menuitem")).toBeNull();
-    expect(transport.intents).toEqual([]);
+    expect(transport.intents.filter((intent) => intent.kind !== "hello")).toEqual([]);
   });
 
   it("ignores content addressed to another slot", async () => {

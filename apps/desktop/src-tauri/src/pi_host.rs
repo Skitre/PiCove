@@ -1112,7 +1112,7 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, trimmed.clone(), 50);
                         }
                         eprintln!("[pi-host] {trimmed}");
-                        let _ = app_err.emit("pi-host-stderr", trimmed);
+                        let _ = app_err.emit_to("main", "pi-host-stderr", trimmed);
                     }
                     Err(error) if is_host_line_too_long(&error) => {
                         let message = format!("Pi Host stderr line truncated: {error}");
@@ -1121,7 +1121,7 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
                         eprintln!("[pideck] {message}");
-                        let _ = app_err.emit("pi-host-stderr", message);
+                        let _ = app_err.emit_to("main", "pi-host-stderr", message);
                         continue;
                     }
                     Err(error) => {
@@ -1131,7 +1131,7 @@ impl PiHostManager {
                             push_stderr_tail(&mut logs, message.clone(), 50);
                         }
                         eprintln!("[pideck] {message}");
-                        let _ = app_err.emit("pi-host-stderr", message);
+                        let _ = app_err.emit_to("main", "pi-host-stderr", message);
                         break;
                     }
                 }
@@ -1181,7 +1181,7 @@ impl PiHostManager {
                                 }
                             }
                             let is_hello_response = payload.contains("\"method\":\"system.hello\"");
-                            let emitted = app_out.emit("pi-host-stdout", payload);
+                            let emitted = app_out.emit_to("main", "pi-host-stdout", payload);
                             if is_hello_response {
                                 eprintln!(
                                     "[pideck] system.hello response emitted to WebView: {}",
@@ -1192,7 +1192,7 @@ impl PiHostManager {
                         Err(error) if is_host_line_too_long(&error) => {
                             let message = format!("Pi Host stdout frame dropped: {error}");
                             eprintln!("[pideck] {message}");
-                            let _ = app_out.emit("pi-host-stderr", message);
+                            let _ = app_out.emit_to("main", "pi-host-stderr", message);
                             continue;
                         }
                         Err(error) => {
@@ -1243,7 +1243,8 @@ impl PiHostManager {
                         detail
                     };
 
-                    let _ = app_out.emit(
+                    let _ = app_out.emit_to(
+                        "main",
                         "pi-host-stdout",
                         serde_json::json!({
                             "protocolVersion": 1,

@@ -12,11 +12,11 @@ import {
   sameMonitor,
 } from "./extension-ui-detached-placement";
 
-/** Built-in Retina panel: 3024×1964 physical at 2x, so 1512×982 logical at the origin. */
+/** Rust already converted the built-in Retina panel to logical coordinates. */
 const builtin: MonitorDescriptor = {
   name: "Built-in Retina Display",
   position: { x: 0, y: 0 },
-  size: { width: 3024, height: 1964 },
+  size: { width: 1512, height: 982 },
   scaleFactor: 2,
 };
 
@@ -29,17 +29,17 @@ const external: MonitorDescriptor = {
 };
 
 describe("monitorLogicalBounds", () => {
-  it("divides physical bounds by the scale factor so mixed-DPI displays share one space", () => {
+  it("uses the logical bounds supplied by the native monitor boundary", () => {
     expect(monitorLogicalBounds(builtin)).toEqual({ x: 0, y: 0, width: 1512, height: 982 });
     expect(monitorLogicalBounds(external)).toEqual({ x: 1512, y: 0, width: 1920, height: 1080 });
   });
 
-  it("treats a nonsensical scale factor as 1 rather than dividing by zero", () => {
+  it("keeps bounds independent from scale metadata", () => {
     expect(monitorLogicalBounds({ ...builtin, scaleFactor: 0 })).toEqual({
       x: 0,
       y: 0,
-      width: 3024,
-      height: 1964,
+      width: 1512,
+      height: 982,
     });
   });
 });
@@ -89,7 +89,7 @@ describe("sameMonitor", () => {
     expect(sameMonitor(left, { ...right, position: { x: 4000, y: 0 } })).toBe(false);
   });
 
-  it("absorbs sub-pixel drift from scale-factor division", () => {
+  it("absorbs sub-pixel drift from platform rounding", () => {
     const drifted = { ...external, name: undefined, position: { x: 1512.4, y: -0.3 } };
     expect(sameMonitor({ ...external, name: undefined }, drifted)).toBe(true);
   });
@@ -187,12 +187,11 @@ describe("resolveDetachedPlacement", () => {
   it("follows the same display through a scale-factor change", () => {
     const retina = { ...external, scaleFactor: 2 };
     const resolved = resolveDetachedPlacement(placement, [builtin, retina]);
-    // 1920×1080 physical at 2x is 960×540 logical starting at x=756, so the
-    // stored rect no longer fits and is pulled back onto the display.
+    // scaleFactor is metadata here; Rust has already converted the bounds.
     expect(resolved).toEqual({
       status: "placed",
       monitor: retina,
-      rect: { x: 1316, y: 120, width: 400, height: 300 },
+      rect: placement.rect,
     });
   });
 });

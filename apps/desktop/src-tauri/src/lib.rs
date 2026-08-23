@@ -69,7 +69,8 @@ pub fn run() {
                 {
                     eprintln!("[pideck] failed to start host: {e}");
                     // Surface to UI as host.fatal so the banner shows the real cause
-                    let _ = handle.emit(
+                    let _ = handle.emit_to(
+                        "main",
                         "pi-host-stdout",
                         serde_json::json!({
                             "protocolVersion": 1,
@@ -109,7 +110,8 @@ pub fn run() {
                     .await
                     {
                         eprintln!("[pideck] auto-restart failed: {e}");
-                        let _ = handle.emit(
+                        let _ = handle.emit_to(
+                            "main",
                             "pi-host-stdout",
                             serde_json::json!({
                                 "protocolVersion": 1,
@@ -167,6 +169,7 @@ pub fn run() {
             commands::extension_float_set_always_on_top,
             commands::extension_float_focus,
             commands::extension_float_close_all,
+            commands::extension_float_intent,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

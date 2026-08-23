@@ -70,7 +70,7 @@ export async function detachedHomeForViewportRect(
   home: Extract<PresentationHome, { kind: "float" }>,
   rect: ViewportRect,
 ): Promise<PresentationHome | undefined> {
-  const placement = await detachedPlacementForViewportRect(rect, await listFloatMonitors());
+  const placement = await detachedPlacementForViewportRect(rect, (await listFloatMonitors()) ?? []);
   if (!placement) return undefined;
   return { ...home, detached: placement };
 }

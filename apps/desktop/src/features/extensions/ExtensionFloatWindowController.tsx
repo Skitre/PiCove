@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   isPresentationHomeForFamily,
   type DetachedFloatPlacement,
@@ -62,6 +62,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { resolveEffectiveTheme } from "../../lib/theme";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
+import { closeExtensionTerminalWithFallback } from "../dock/ExtensionTerminal";
 
 type DetachedEntry = { slot: ExtensionPresentationSlot; mount: PresentationSlotMount };
 
@@ -120,6 +121,11 @@ export function ExtensionFloatWindowController() {
   const frameTail = useRef(new Map<string, string>());
   const translate = useRef(t);
   translate.current = t;
+  // The content push runs on every render and re-sends only what changed, so a
+  // Float reporting in needs nothing but a render. Only the setter is taken —
+  // the count itself is never read.
+  const rerender = useState(0)[1];
+  const [monitorTopologyKey, setMonitorTopologyKey] = useState("");
 
   // Every float wants a window now, whether or not it already carries a
   // placement: a float with none is one the user has not positioned yet (an
@@ -133,6 +139,34 @@ export function ExtensionFloatWindowController() {
   const customRelayKey = JSON.stringify(
     detached.map(({ slot, mount }) => [slot.slotId, mount.custom?.requestId ?? null]),
   );
+  const hasDetached = detached.length > 0;
+
+  // Tauri exposes no portable monitor-topology event. Poll only while a Float
+  // is requested; transient enumeration failures preserve the last known
+  // topology instead of reattaching every window.
+  useEffect(() => {
+    if (!hasDetached) {
+      monitors.current = [];
+      setMonitorTopologyKey("");
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    const refresh = async () => {
+      const live = await listFloatMonitors();
+      if (cancelled) return;
+      if (live !== null) {
+        monitors.current = live;
+        setMonitorTopologyKey(JSON.stringify(live));
+      }
+      timer = window.setTimeout(refresh, 2_000);
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasDetached]);
 
   const commitHome = (
     slot: ExtensionPresentationSlot,
@@ -164,9 +198,7 @@ export function ExtensionFloatWindowController() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const live = await listFloatMonitors();
-      if (cancelled) return;
-      monitors.current = live;
+      const live = monitors.current;
       const wanted = new Set<string>();
 
       for (const { slot, mount } of entries.current) {
@@ -238,7 +270,7 @@ export function ExtensionFloatWindowController() {
     return () => {
       cancelled = true;
     };
-  }, [detachedKey]);
+  }, [detachedKey, monitorTopologyKey]);
 
   // Push content whenever what a Float should draw actually changes.
   useEffect(() => {
@@ -308,9 +340,25 @@ export function ExtensionFloatWindowController() {
       const entry = entries.current.find(({ slot }) => slot.slotId === intent.slotId);
       if (!entry || entry.mount.home.kind !== "float") return;
       const { slot } = entry;
+      const mount = entry.mount;
       const home = entry.mount.home;
       switch (intent.kind) {
+        case "hello":
+          // The window is listening again. Forget what it was last sent so the
+          // push below treats its content as new, and re-render to run it.
+          lastContent.current.delete(intent.slotId);
+          rerender((value) => value + 1);
+          return;
         case "close":
+          if (mount.custom) {
+            const panel = useAppStore.getState().extensionTerminal;
+            if (panel && panel.requestId === mount.custom.requestId) {
+              void closeExtensionTerminalWithFallback(panel).then((error) => {
+                if (error) useAppStore.getState().pushNotification(error, "error");
+              });
+            }
+            return;
+          }
           commitHome(slot, { kind: "hidden" }, "extensionUiMovedToHidden");
           return;
         case "togglePin":
@@ -334,6 +382,7 @@ export function ExtensionFloatWindowController() {
           return;
         }
         case "customReady": {
+          if (mount.custom?.requestId !== intent.requestId) return;
           // The Float's terminal is listening now, so what arrived while it was
           // still mounting can finally be drawn.
           const label = open.current.get(slot.slotId);
@@ -347,6 +396,7 @@ export function ExtensionFloatWindowController() {
           return;
         }
         case "customInput": {
+          if (mount.custom?.requestId !== intent.requestId) return;
           const context = livePanelContext(intent.requestId);
           if (!context) return;
           void hostClient
@@ -358,6 +408,7 @@ export function ExtensionFloatWindowController() {
           return;
         }
         case "customResize": {
+          if (mount.custom?.requestId !== intent.requestId) return;
           const context = livePanelContext(intent.requestId);
           if (!context) return;
           void hostClient
@@ -380,7 +431,9 @@ export function ExtensionFloatWindowController() {
       cancelled = true;
       dispose?.();
     };
-  }, []);
+    // A `useState` setter is stable for the component's lifetime, so listing it
+    // cannot re-subscribe; it only satisfies the rule.
+  }, [rerender]);
 
   return null;
 }
