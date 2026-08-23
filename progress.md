@@ -714,3 +714,30 @@
 - Final verification passed: Desktop typecheck and lint; root `pnpm test`
   (Protocol 534, Pi Host 761, Desktop 905); post-polish Dock/Float focused set
   25 tests; `git diff --check` clean.
+
+## Session: 2026-08-23 UI polish quickfix
+
+- **Status:** complete (Phase quickfix of the Extension Deck UI polish plan)
+- QF1 transport-line filter (2731c31):
+  - Added `lib/extension-ui-transport-filter.ts`; `buildExtensionPresentationSlots`
+    filters `PI_SUBAGENT_*_JSON:` lines before assembling, so fully-transport
+    widget/status content produces no slot at all (no anchor block, Dock tab, or
+    float). Status text uses the same per-line judgment.
+  - Helper unit tests (6) and slot-level tests (2 added); treated as temporary
+    compatibility per extension-deck.md, not a renderer contract.
+- QF2 float click-to-top (30f759e):
+  - `ExtensionFloatLayer` tracks transient float z-order in React state; shells
+    get inline `zIndex` and raise themselves via `onPointerDownCapture`. Floats
+    stack in appearance order with newcomers on top; nothing persists.
+- QF3 drag drop-target highlight (bfa39b1):
+  - Added `lib/extension-ui-drag-state.ts` (module store +
+    `useSyncExternalStore`, browser-occlusion pattern) holding
+    `{ slotId, family } | null`.
+  - Set on Dock HTML5 dragstart and Float title-bar pointer-drag start; cleared
+    on dragend/drop/pointerup/pointercancel and float unmount.
+  - Legal targets light up per family (widget → both anchors + dock
+    primary/secondary; custom → dock only) with `ring-accent` / `bg-accent/10`;
+    the secondary dock edge widens to w-6/h-6 with an accent bar while active.
+- Verification: focused suites green; full `pnpm verify:quick` green
+  (Desktop 136 files / 920 tests, Pi Host 82 / 761, Protocol build/typecheck).
+- Next phase: A (widget/status renderer forms: strip vs panel/list).
