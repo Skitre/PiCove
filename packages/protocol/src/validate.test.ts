@@ -1091,6 +1091,18 @@ describe("deep result/event validation (C3)", () => {
       }),
     ).toBe(false);
     expect(request({ options: [{ id: undefined, label: "label" }] })).toBe(false);
+    expect(request({ options: [{ id: "", label: "label" }] })).toBe(false);
+    expect(request({ options: [{ id: " \t ", label: "label" }] })).toBe(false);
+    expect(request({ options: [{ id: "id", label: "" }] })).toBe(false);
+    expect(request({ options: [{ id: "id", label: " \t " }] })).toBe(false);
+    expect(
+      request({
+        options: [
+          { id: "duplicate", label: "First" },
+          { id: "duplicate", label: "Second" },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it("accepts strict trusted Extension UI invocation origins", () => {

@@ -75,10 +75,6 @@ function isOptionalBoundedString(value: unknown, maxLength: number): boolean {
   return value === undefined || (typeof value === "string" && value.length <= maxLength);
 }
 
-function isBoundedString(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.length <= maxLength;
-}
-
 function isBoolean(value: unknown): value is boolean {
   return typeof value === "boolean";
 }
@@ -1281,18 +1277,7 @@ function isExtensionUiRequest(value: unknown): boolean {
     ["select", "confirm", "input", "editor"].includes(String(value.kind)) &&
     isOptionalBoundedString(value.title, MAX_EXTENSION_UI_TITLE_LENGTH) &&
     isOptionalBoundedString(value.message, MAX_EXTENSION_UI_MESSAGE_LENGTH) &&
-    (value.options === undefined ||
-      (Array.isArray(value.options) &&
-        value.options.length <= MAX_EXTENSION_UI_OPTIONS &&
-        value.options.every(
-          (item) =>
-            isPlainObject(item) &&
-            hasExactKeys(item, ["id", "label"], ["description", "destructive"]) &&
-            isBoundedString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH) &&
-            isBoundedString(item.label, MAX_EXTENSION_UI_OPTION_LABEL_LENGTH) &&
-            isOptionalBoundedString(item.description, MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH) &&
-            (item.destructive === undefined || isBoolean(item.destructive)),
-        ))) &&
+    (value.options === undefined || isExtensionUiOptions(value.options)) &&
     isOptionalBoundedString(value.defaultValue, MAX_EXTENSION_UI_DEFAULT_VALUE_LENGTH) &&
     (value.timeoutMs === undefined || isSafeRevision(value.timeoutMs)) &&
     isOptionalBoundedString(value.sourceLabel, MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH) &&
@@ -1309,6 +1294,28 @@ function isExtensionUiRequest(value: unknown): boolean {
     (value.allowFreeform === undefined || isBoolean(value.allowFreeform)) &&
     (value.origin === undefined || isExtensionUiOrigin(value.origin))
   );
+}
+
+function isExtensionUiOptions(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > MAX_EXTENSION_UI_OPTIONS) return false;
+  const ids = new Set<string>();
+  for (const item of value) {
+    if (
+      !isPlainObject(item) ||
+      !hasExactKeys(item, ["id", "label"], ["description", "destructive"]) ||
+      !isBoundedNonEmptyString(item.id, MAX_EXTENSION_UI_OPTION_ID_LENGTH) ||
+      !item.id.trim() ||
+      ids.has(item.id) ||
+      !isBoundedNonEmptyString(item.label, MAX_EXTENSION_UI_OPTION_LABEL_LENGTH) ||
+      !item.label.trim() ||
+      !isOptionalBoundedString(item.description, MAX_EXTENSION_UI_OPTION_DESCRIPTION_LENGTH) ||
+      (item.destructive !== undefined && !isBoolean(item.destructive))
+    ) {
+      return false;
+    }
+    ids.add(item.id);
+  }
+  return true;
 }
 
 function isSessionEntry(value: unknown): boolean {
