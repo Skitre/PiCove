@@ -11,6 +11,11 @@ import {
   type ExtensionPresentationHint,
   type ResolvedPresentation,
 } from "./extension-ui-resolver";
+import {
+  filterExtensionUiTransportContent,
+  filterExtensionUiTransportLines,
+  isExtensionUiTransportEmpty,
+} from "./extension-ui-transport-filter";
 
 export type LiveWidgetContent = {
   key: string;
@@ -131,8 +136,14 @@ export function buildExtensionPresentationSlots(input: {
   custom?: LiveCustomContent | null;
 }): ExtensionPresentationSlot[] {
   const slots: ExtensionPresentationSlot[] = [];
+  const widgets = input.widgets
+    .map((widget) => ({ ...widget, widget: filterExtensionUiTransportContent(widget.widget) }))
+    .filter((widget) => !isExtensionUiTransportEmpty(widget.widget));
+  const statuses = input.statuses
+    .map((status) => ({ ...status, text: filterExtensionUiTransportLines(status.text) }))
+    .filter((status) => status.text !== "");
   const widgetsById = new Map<string | undefined, LiveWidgetContent[]>();
-  for (const widget of input.widgets) {
+  for (const widget of widgets) {
     const extensionId = trustedExtensionId(widget.origin);
     const bucket = widgetsById.get(extensionId) ?? [];
     bucket.push(widget);
@@ -149,7 +160,7 @@ export function buildExtensionPresentationSlots(input: {
   }
 
   const statusesById = new Map<string | undefined, LiveStatusContent[]>();
-  for (const status of input.statuses) {
+  for (const status of statuses) {
     const extensionId = trustedExtensionId(status.origin);
     const bucket = statusesById.get(extensionId) ?? [];
     bucket.push(status);

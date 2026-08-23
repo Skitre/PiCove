@@ -117,6 +117,43 @@ describe("buildExtensionPresentationSlots", () => {
     ).toEqual({ kind: "dock", group: "primary", order: 0 });
   });
 
+  it("drops widget and status slots whose content is entirely transport lines", () => {
+    const slots = buildExtensionPresentationSlots({
+      settings: DEFAULT_EXTENSION_UI_SETTINGS,
+      widgets: [
+        {
+          key: "fleet",
+          widget: "PI_SUBAGENT_abc_JSON: 1\nPI_SUBAGENT_def_JSON: 2",
+          placement: "aboveEditor",
+          origin: trusted,
+        },
+      ],
+      statuses: [{ key: "fleet", text: "PI_SUBAGENT_abc_JSON: 3", origin: trusted }],
+    });
+    expect(slots).toHaveLength(0);
+  });
+
+  it("keeps visible widget and status rows when transport lines mix with content", () => {
+    const slots = buildExtensionPresentationSlots({
+      settings: DEFAULT_EXTENSION_UI_SETTINGS,
+      widgets: [
+        {
+          key: "fleet",
+          widget: ["PI_SUBAGENT_abc_JSON: 1", "fleet: 2 running", "PI_SUBAGENT_def_JSON: 3"],
+          placement: "aboveEditor",
+          origin: trusted,
+        },
+      ],
+      statuses: [{ key: "fleet", text: "fleet: ok", origin: trusted }],
+    });
+    const widgetMount = slots.find((slot) => slot.family === "widget")?.mounts[0];
+    expect(widgetMount?.widgets).toHaveLength(1);
+    expect(widgetMount?.widgets?.[0]?.widget).toEqual(["fleet: 2 running"]);
+    expect(slots.find((slot) => slot.family === "status")?.mounts[0]?.statuses).toEqual([
+      { key: "fleet", text: "fleet: ok", origin: trusted },
+    ]);
+  });
+
   it("caps live floats at eight and leaves later slots in dock", () => {
     const presentations = Object.fromEntries(
       Array.from({ length: MAX_EXTENSION_UI_FLOATS + 1 }, (_, index) => [
