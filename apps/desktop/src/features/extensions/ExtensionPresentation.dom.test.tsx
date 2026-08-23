@@ -14,6 +14,10 @@ import {
   getExtensionUiUndo,
 } from "../../lib/extension-ui-profile";
 import { EXTENSION_UI_UNDO_TOAST_MS } from "./ExtensionPresentationMounts";
+import {
+  resetWindowedFloatsForTests,
+  setWindowedFloats,
+} from "../../lib/extension-float-placement-state";
 
 const terminalMocks = vi.hoisted(() => ({
   close: vi.fn(async () => null as string | null),
@@ -135,6 +139,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetWindowedFloatsForTests();
   cleanup();
   vi.useRealTimers();
   clearExtensionUiUndo();
@@ -587,7 +592,12 @@ describe("Extension presentation mounts", () => {
     expect(
       screen.getByRole("menuitem", { name: "Extensions Dock · secondary" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Floating panel" })).toBeInTheDocument();
+    // A float is its own OS window; the in-window layer is where one lands when
+    // no window can be opened, which is not something to choose.
+    expect(screen.queryByRole("menuitem", { name: "Floating panel" })).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Hidden" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Extensions Dock · primary" }));
@@ -638,6 +648,110 @@ describe("Extension presentation mounts", () => {
           ?.home,
       ).toEqual({ kind: "hidden" }),
     );
+  });
+
+  it("opens the placement list from a visible button on both the float and the anchor strip", async () => {
+    // Right-click was the only way in, and a drag cannot be used to browse the
+    // placements: releasing the pointer is what commits a drop, so the list
+    // vanishes at the moment the user reaches for it.
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    render(
+      <>
+        <ChatPage />
+        <MenuHost />
+      </>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
+    );
+    expect(screen.getByRole("menuitem", { name: "Above composer" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Above composer" }));
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toMatchObject({ kind: "anchor", slot: "aboveComposer" }),
+    );
+
+    // The same control exists once the widget is anchored, so the route back
+    // does not depend on discovering the context menu either.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
+    );
+    expect(
+      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the undo toast off the drop targets while a drag is live", async () => {
+    // A placement change raises the toast for six seconds, so changing one and
+    // dragging again used to put the toast straight on top of the targets.
+    mountWidget({ placement: "aboveEditor" });
+    render(
+      <>
+        <ChatPage />
+        <MenuHost />
+      </>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
+    );
+    await userEvent.click(screen.getByRole("menuitem", { name: "Below composer" }));
+    const toast = await screen.findByText(/Applies to all sessions/);
+    const banner = toast.closest("[data-extension-ui-undo]")!;
+    expect(banner).toHaveAttribute("data-extension-ui-undo-raised", "false");
+
+    const handle = document.querySelector("[data-extension-drag-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 7, button: 0 });
+    await waitFor(() => expect(banner).toHaveAttribute("data-extension-ui-undo-raised", "true"));
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeInTheDocument();
+
+    fireEvent.pointerUp(document, { pointerId: 7, clientX: 5, clientY: 5 });
+    await waitFor(() => expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull());
+  });
+
+  it("yields a float to its own window, and draws it again when the window goes away", () => {
+    // The in-window layer is the fallback now: it draws exactly the floats the
+    // window controller could not place, so an unplugged display or a platform
+    // that refuses leaves the float visible rather than nowhere.
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    const view = render(<ChatPage />);
+    expect(screen.getByRole("dialog", { name: "pi-subagents Widget" })).toBeInTheDocument();
+
+    act(() => setWindowedFloats(["pi-subagents:widget"]));
+    expect(screen.queryByRole("dialog", { name: "pi-subagents Widget" })).toBeNull();
+
+    act(() => resetWindowedFloatsForTests());
+    expect(screen.getByRole("dialog", { name: "pi-subagents Widget" })).toBeInTheDocument();
+    view.unmount();
   });
 
   it("moves an anchored widget into the Dock through the drag handle and overlay", async () => {

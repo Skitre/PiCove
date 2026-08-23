@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { GripVertical, LoaderCircle, Pin, X } from "lucide-react";
+import { GripVertical, LayoutGrid, Pin, X } from "lucide-react";
 import type { PresentationHome } from "@pideck/protocol";
 import { observedExtensionDisplayName } from "../../lib/extension-ui-observation";
 import {
@@ -58,6 +58,8 @@ import {
 } from "../../lib/desktop-settings";
 import type { MessageKey } from "../../lib/i18n";
 import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
+import { ExtensionFloatTitleBar, ExtensionFloatTitleBarButton } from "./ExtensionFloatChrome";
+import { useWindowedFloats } from "../../lib/extension-float-placement-state";
 import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
 import { statusChipText } from "../../lib/extension-ui-status-text";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
@@ -194,7 +196,7 @@ function ExtensionDropOverlay() {
   if (!drag?.withOverlay) return null;
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-40 flex items-end justify-center p-4"
+      className="pointer-events-none fixed inset-0 z-[60] flex items-end justify-center p-4"
       data-extension-drop-overlay
     >
       <div className="flex flex-wrap justify-center gap-2 rounded-lg border border-border bg-surface-raised p-2 shadow-xl">
@@ -224,6 +226,10 @@ function AnchorSlotRow({
   const t = useT();
   const dragSession = useRef<{ pointerId: number } | null>(null);
   const cleanupDrag = useRef<(() => void) | null>(null);
+  const anchorName = slot.extensionId
+    ? observedExtensionDisplayName(slot.extensionId)
+    : slot.slotId;
+  const anchorFamily = t(extensionUiFamilyMessageKey(slot.family));
 
   useEffect(() => {
     return () => {
@@ -322,14 +328,38 @@ function AnchorSlotRow({
         })
       }
     >
-      <div
-        data-extension-drag-handle
-        aria-label={t("extensionUiDragHandle")}
-        title={t("extensionUiDragHandle")}
-        className="mt-1 shrink-0 cursor-grab touch-none rounded text-muted hover:text-foreground"
-        onPointerDown={onHandlePointerDown}
-      >
-        <GripVertical aria-hidden="true" size={12} />
+      {/* One gutter, not two. Side by side these cost the content a second
+          column of width on a strip that is already narrow. */}
+      <div className="flex shrink-0 flex-col items-center gap-0.5 pt-1">
+        <div
+          data-extension-drag-handle
+          aria-label={t("extensionUiDragHandle")}
+          title={t("extensionUiDragHandle")}
+          className="cursor-grab touch-none rounded text-muted hover:text-foreground"
+          onPointerDown={onHandlePointerDown}
+        >
+          <GripVertical aria-hidden="true" size={12} />
+        </div>
+        {/* Dragging is a shortcut, not the only route: releasing the pointer is
+            what commits a drop, so a drag can never be used to *browse* the
+            placements. This button opens the same list and holds it open. */}
+        <button
+          type="button"
+          aria-label={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
+          title={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
+          className="rounded text-muted hover:text-foreground"
+          onClick={(event) =>
+            openExtensionSlotContextMenu({
+              family: slot.family,
+              extensionId: slot.extensionId,
+              currentHome: mount.home,
+              event,
+              t,
+            })
+          }
+        >
+          <LayoutGrid aria-hidden="true" size={12} />
+        </button>
       </div>
       <div className="min-w-0 flex-1">
         <SlotBody mount={mount} family={slot.family} />
@@ -385,7 +415,14 @@ export function ExtensionDockStrip() {
 export function ExtensionFloatLayer() {
   const page = useAppStore((state) => state.page);
   const slots = usePresentationSlots();
-  const floats = mountsForHome(slots, (home) => home.kind === "float");
+  // A float that has a window of its own must not also be drawn here — that
+  // would put one slot on screen twice. This layer is the fallback for the
+  // rest: a float whose display was unplugged, one the platform refused, and
+  // every float at all when there is no desktop runtime to open windows in.
+  const windowed = useWindowedFloats();
+  const floats = mountsForHome(slots, (home) => home.kind === "float").filter(
+    ({ slot }) => !windowed.has(slot.slotId),
+  );
   // Float z-order is transient interaction state: floats stack in appearance
   // order with newcomers on top, and pointerdown raises a shell. Never persisted.
   const [raisedOrder, setRaisedOrder] = useState<string[]>([]);
@@ -600,6 +637,7 @@ function ExtensionFloatShell({
         kind: "float",
         rect: pixelsToNormalizedFloatRect(clamped, viewport),
         ...(home.pinned !== undefined ? { pinned: home.pinned } : {}),
+        ...(home.detached ? { detached: home.detached } : {}),
       } satisfies PresentationHome);
     await persistHome(slot, resolved, t(extensionUiHomeMessageKey(resolved), { name, family }));
   };
@@ -757,8 +795,8 @@ function ExtensionFloatShell({
         if (event.key.startsWith("Arrow")) void persistRect(pixel);
       }}
     >
-      <div
-        className="flex h-8 shrink-0 cursor-grab items-center gap-2 border-b border-border px-2"
+      <ExtensionFloatTitleBar
+        label={label}
         onPointerDown={(event) => onPointerDown(event, "move")}
         onContextMenu={(event) =>
           openExtensionSlotContextMenu({
@@ -770,16 +808,27 @@ function ExtensionFloatShell({
           })
         }
       >
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">{label}</span>
-        <button
-          type="button"
-          aria-label={
+        <ExtensionFloatTitleBarButton
+          label={t("extensionUiPlacementMenu", { name, family })}
+          icon={LayoutGrid}
+          onClick={(event) =>
+            openExtensionSlotContextMenu({
+              family: slot.family,
+              extensionId: slot.extensionId,
+              currentHome: mount.home,
+              event,
+              t,
+            })
+          }
+        />
+        <ExtensionFloatTitleBarButton
+          label={
             home.pinned
               ? t("extensionUiFloatUnpin", { name, family })
               : t("extensionUiFloatPin", { name, family })
           }
-          className={`relative z-40 flex size-6 items-center justify-center rounded ${home.pinned ? "text-accent" : "text-muted"}`}
-          onPointerDown={(event) => event.stopPropagation()}
+          icon={Pin}
+          active={home.pinned === true}
           onClick={() =>
             void persistHome(
               slot,
@@ -787,16 +836,12 @@ function ExtensionFloatShell({
               t(extensionUiHomeMessageKey(home), { name, family }),
             )
           }
-        >
-          <Pin size={13} />
-        </button>
-        <button
-          type="button"
-          aria-label={t("extensionUiFloatClose", { name, family })}
-          aria-busy={closingCustom}
+        />
+        <ExtensionFloatTitleBarButton
+          label={t("extensionUiFloatClose", { name, family })}
+          icon={X}
+          busy={closingCustom}
           disabled={closingCustom}
-          className="relative z-40 flex size-6 items-center justify-center rounded text-muted hover:text-foreground disabled:opacity-60"
-          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
             if (slot.family === "custom" && mount.custom) {
               const panel = useAppStore.getState().extensionTerminal;
@@ -822,14 +867,8 @@ function ExtensionFloatShell({
               t("extensionUiMovedToHidden", { name, family }),
             );
           }}
-        >
-          {closingCustom ? (
-            <LoaderCircle size={13} className="animate-spin motion-reduce:animate-none" />
-          ) : (
-            <X size={13} />
-          )}
-        </button>
-      </div>
+        />
+      </ExtensionFloatTitleBar>
       <div className="relative z-0 min-h-0 flex-1 overflow-auto px-3 py-2">
         <SlotBody mount={mount} family={slot.family} visible={visible} />
       </div>
@@ -862,6 +901,12 @@ export const EXTENSION_UI_UNDO_TOAST_MS = 6_000;
 export function ExtensionUiUndoToast() {
   const t = useT();
   const entry = useSyncExternalStore(subscribeExtensionUiUndo, getExtensionUiUndo, () => null);
+  // Both this and the drop overlay want the bottom centre, and every placement
+  // change raises this toast for six seconds — so changing a placement and then
+  // dragging again put the toast straight on top of the drop targets. Stepping
+  // up keeps the undo offer alive instead of hiding it, and the overlay sits
+  // above this layer so a target can never be covered.
+  const dragging = useActiveExtensionUiDrag()?.withOverlay === true;
 
   useEffect(() => {
     if (!entry) return;
@@ -876,7 +921,10 @@ export function ExtensionUiUndoToast() {
     <div
       role="status"
       data-extension-ui-undo
-      className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs shadow-xl"
+      data-extension-ui-undo-raised={dragging ? "true" : "false"}
+      className={`fixed left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs shadow-xl transition-[bottom] duration-150 motion-reduce:transition-none ${
+        dragging ? "bottom-28" : "bottom-4"
+      }`}
     >
       <span>
         {entry.message}

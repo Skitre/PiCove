@@ -16,6 +16,7 @@ import {
 } from "./extension-ui-home-message";
 import { liveExtensionPresentationSlots } from "./extension-ui-live-slots";
 import { observedExtensionDisplayName } from "./extension-ui-observation";
+import { detachedHomeForViewportRect, type ViewportRect } from "./extension-float-detach";
 import { isLegalPresentationChoice, presentationHomeFromChoice } from "./extension-ui-presentation";
 import { commitExtensionPresentationHome, commitExtensionUiSettings } from "./extension-ui-profile";
 import type { ExtensionPresentationSlot } from "./extension-ui-slots";
@@ -23,7 +24,7 @@ import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
 export type ExtensionSlotMoveChoice =
-  "dockPrimary" | "dockSecondary" | "float" | "aboveComposer" | "belowComposer";
+  "dockPrimary" | "dockSecondary" | "aboveComposer" | "belowComposer";
 
 function commandRoot(): ParentNode | null {
   return typeof document === "undefined" ? null : document;
@@ -76,6 +77,56 @@ export function hasLiveExtensionFloats(): boolean {
 
 export function canMoveFocusedExtensionSlot(root?: ParentNode | null): boolean {
   return Boolean(focusedMovableSlot(root));
+}
+
+/**
+ * A slot can be detached when it may float and is not already in its own
+ * window. A detached slot is not drawn in the main window at all, so it can
+ * never be the focused one — re-attach is offered by the float window itself.
+ */
+export function canDetachFocusedExtensionSlot(root?: ParentNode | null): boolean {
+  const slot = focusedMovableSlot(root);
+  const home = slot?.mounts[0]?.home;
+  return Boolean(slot) && !(home?.kind === "float" && home.detached !== undefined);
+}
+
+/** Where the focused slot is drawn, so its window opens over the same pixels. */
+function focusedSlotViewportRect(slotId: string, root: ParentNode | null): ViewportRect {
+  const element = root?.querySelector(
+    `[data-extension-float="${slotId}"], [data-extension-slot="${slotId}"]`,
+  );
+  if (element) {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  }
+  return { left: 80, top: 80, width: 360, height: 240 };
+}
+
+/**
+ * Move the focused widget or `custom()` slot into its own OS window. A slot
+ * that is not floating yet becomes a Float on the way out, exactly as the
+ * context-menu entry does — detaching chooses a container, not a presentation.
+ */
+export async function detachFocusedExtensionSlot(root?: ParentNode | null): Promise<boolean> {
+  const scope = root === undefined ? commandRoot() : root;
+  const slot = focusedMovableSlot(scope);
+  if (!slot?.extensionId || !canDetachFocusedExtensionSlot(scope)) return false;
+  const settings = canonicalExtensionUiSettings(useAppStore.getState().desktopSettings);
+  const current = slot.mounts[0]?.home;
+  const asFloat = presentationHomeFromChoice(slot.family, "float", settings, current);
+  if (asFloat.kind !== "float") return false;
+  try {
+    const home = await detachedHomeForViewportRect(
+      asFloat,
+      focusedSlotViewportRect(slot.slotId, scope),
+    );
+    if (!home) return false;
+    await persistSlotHome(slot, home);
+    return true;
+  } catch (error) {
+    notifyDesktopSettingsSaveFailure(error);
+    return false;
+  }
 }
 
 export function hasFocusedExtensionDockGroup(root?: ParentNode | null): boolean {

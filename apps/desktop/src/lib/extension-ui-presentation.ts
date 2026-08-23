@@ -115,12 +115,15 @@ export function presentationHomeFromChoice(
       return { kind: "dock", group, order };
     }
     case "float":
+      // Re-picking "Float" while already floating must not quietly undo the
+      // user's pin or send a detached window back into the main window.
       return {
         kind: "float",
         rect: current?.kind === "float" ? current.rect : { ...DEFAULT_FLOAT_RECT },
         ...(current?.kind === "float" && current.pinned !== undefined
           ? { pinned: current.pinned }
           : {}),
+        ...(current?.kind === "float" && current.detached ? { detached: current.detached } : {}),
       };
     case "hidden":
       return { kind: "hidden" };

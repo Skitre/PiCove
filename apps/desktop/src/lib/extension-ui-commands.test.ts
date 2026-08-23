@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { DEFAULT_EXTENSION_UI_SETTINGS } from "@pideck/protocol";
+import { DEFAULT_EXTENSION_UI_SETTINGS, type PresentationHome } from "@pideck/protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetExtensionDeckV1GateForTests } from "./extension-deck-gate";
 import {
   activateAdjacentExtensionDockTab,
+  canDetachFocusedExtensionSlot,
   canMoveFocusedExtensionSlot,
   focusAdjacentExtensionFloat,
   hasExtensionDockSplit,
@@ -187,5 +188,43 @@ describe("extension UI commands", () => {
     expect(hasExtensionDockSplit()).toBe(true);
     expect(await resizeExtensionDockSplit(0.1)).toBe(true);
     expect(useAppStore.getState().desktopSettings?.extensionUi?.dock.sizes).toEqual([0.6, 0.4]);
+  });
+
+  it("offers detach to a floating slot and withdraws it once the slot has its own window", () => {
+    const detached = {
+      monitor: {
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+        scaleFactor: 1,
+      },
+      rect: { x: 100, y: 100, width: 360, height: 240 },
+    };
+    mountWidget();
+    const slot = document.createElement("button");
+    slot.dataset.extensionSlot = "pi-subagents:widget";
+    document.body.append(slot);
+    slot.focus();
+    // An attached slot may detach whether or not it is floating yet: detaching
+    // chooses a container, and a non-float becomes a float on the way out.
+    expect(canDetachFocusedExtensionSlot()).toBe(true);
+
+    const rect = { x: 0.1, y: 0.1, width: 0.3, height: 0.3 };
+    const setHome = (home: PresentationHome) => {
+      useAppStore.getState().setDesktopSettings({
+        ...baseSettings(),
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: { "pi-subagents": { widget: { home } } },
+        },
+      });
+    };
+
+    setHome({ kind: "float", rect });
+    expect(canDetachFocusedExtensionSlot()).toBe(true);
+
+    // Already in its own window: the float window carries reattach, and the
+    // in-window layer does not draw the slot at all.
+    setHome({ kind: "float", rect, detached });
+    expect(canDetachFocusedExtensionSlot()).toBe(false);
   });
 });
