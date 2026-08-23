@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -187,6 +188,31 @@ export function ExtensionFloatLayer() {
   const page = useAppStore((state) => state.page);
   const slots = usePresentationSlots();
   const floats = mountsForHome(slots, (home) => home.kind === "float");
+  // Float z-order is transient interaction state: floats stack in appearance
+  // order with newcomers on top, and pointerdown raises a shell. Never persisted.
+  const [raisedOrder, setRaisedOrder] = useState<string[]>([]);
+  const floatIds = floats.map(({ slot }) => slot.slotId);
+  const floatIdsKey = floatIds.join("\n");
+  useEffect(() => {
+    setRaisedOrder((current) => {
+      const kept = current.filter((id) => floatIds.includes(id));
+      const fresh = floatIds.filter((id) => !current.includes(id));
+      const next = [...kept, ...fresh];
+      return next.length === current.length && next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- membership only changes when the id list changes
+  }, [floatIdsKey]);
+  const zIndexBySlotId = new Map(raisedOrder.map((id, index) => [id, index + 1]));
+  const bringToFront = useCallback((slotId: string) => {
+    setRaisedOrder((current) => {
+      const next = current.filter((id) => id !== slotId).concat(slotId);
+      return next.length === current.length && next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
+  }, []);
   if (floats.length === 0) return null;
   return (
     <div
@@ -199,6 +225,8 @@ export function ExtensionFloatLayer() {
           slot={slot}
           mount={mount}
           visible={page === "chat"}
+          zIndex={zIndexBySlotId.get(slot.slotId) ?? 1}
+          onRaise={() => bringToFront(slot.slotId)}
         />
       ))}
     </div>
@@ -266,10 +294,14 @@ function ExtensionFloatShell({
   slot,
   mount,
   visible,
+  zIndex,
+  onRaise,
 }: {
   slot: ExtensionPresentationSlot;
   mount: PresentationSlotMount;
   visible: boolean;
+  zIndex: number;
+  onRaise: () => void;
 }) {
   const t = useT();
   const home = mount.home.kind === "float" ? mount.home : null;
@@ -480,7 +512,8 @@ function ExtensionFloatShell({
       data-extension-float={slot.slotId}
       data-extension-pinned={home.pinned === true ? "true" : "false"}
       className="pointer-events-auto absolute flex flex-col overflow-hidden rounded-lg border border-border bg-surface-raised shadow-xl motion-reduce:transition-none"
-      style={{ left: pixel.left, top: pixel.top, width: pixel.width, height: pixel.height }}
+      style={{ left: pixel.left, top: pixel.top, width: pixel.width, height: pixel.height, zIndex }}
+      onPointerDownCapture={onRaise}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onKeyDown={(event) => {

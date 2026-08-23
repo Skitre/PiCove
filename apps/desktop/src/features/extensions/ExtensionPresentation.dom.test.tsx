@@ -418,6 +418,51 @@ describe("Extension presentation mounts", () => {
     );
   });
 
+  it("raises a float above others on pointerdown and keeps new floats on top", () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.1, y: 0.1, width: 300, height: 180 } } },
+          },
+          "ext-other": {
+            widget: { home: { kind: "float", rect: { x: 0.5, y: 0.5, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    render(<ChatPage />);
+    const first = screen.getByRole("dialog", { name: "pi-subagents Widget" });
+
+    act(() => {
+      useAppStore.getState().setExtensionWidget({
+        key: "other",
+        widget: ["other-ready"],
+        origin: { ...trusted, extensionId: "ext-other", extensionDisplayName: "Other" },
+        hostInstanceId: "h1",
+        workspaceId: "w",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      });
+    });
+    const second = screen.getByRole("dialog", { name: "ext-other Widget" });
+
+    const zIndex = (element: Element) => Number(element.style.zIndex);
+    expect(zIndex(first)).toBeGreaterThan(0);
+    expect(zIndex(second)).toBeGreaterThan(zIndex(first));
+
+    fireEvent.pointerDown(first, { pointerId: 9, clientX: 150, clientY: 150 });
+    expect(zIndex(first)).toBeGreaterThan(zIndex(second));
+    expect(
+      useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+        ?.home,
+    ).toMatchObject({ kind: "float", rect: { x: 0.1, y: 0.1 } });
+  });
+
   it("dismisses the undo toast without reversing the change", async () => {
     await commitExtensionPresentationHome({
       extensionId: "pi-subagents",
