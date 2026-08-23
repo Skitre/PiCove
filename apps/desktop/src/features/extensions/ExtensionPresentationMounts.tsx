@@ -28,6 +28,7 @@ import {
   endExtensionUiDrag,
   useExtensionDropHighlight,
 } from "../../lib/extension-ui-drag-state";
+import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
 import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
 import {
   clearExtensionUiUndo,
@@ -44,10 +45,7 @@ import {
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { notifyDesktopSettingsSaveFailure } from "../../lib/desktop-settings";
-import {
-  closeExtensionTerminalWithFallback,
-  ExtensionTerminal,
-} from "../dock/ExtensionTerminal";
+import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
 import { statusChipText } from "../../lib/extension-ui-status-text";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
 
@@ -73,9 +71,18 @@ async function persistHome(
   }
 }
 
-function SlotBody({ mount, visible = true }: { mount: PresentationSlotMount; visible?: boolean }) {
-  if (mount.widgets?.length) return <ExtensionWidgetRows widgets={mount.widgets} />;
-  if (mount.statuses?.length) return <ExtensionStatusRows statuses={mount.statuses} />;
+function SlotBody({
+  mount,
+  family,
+  visible = true,
+}: {
+  mount: PresentationSlotMount;
+  family: ExtensionPresentationSlot["family"];
+  visible?: boolean;
+}) {
+  const form = rendererFormFor(family === "status" ? "status" : "widget", mount.home.kind);
+  if (mount.widgets?.length) return <ExtensionWidgetRows widgets={mount.widgets} form={form} />;
+  if (mount.statuses?.length) return <ExtensionStatusRows statuses={mount.statuses} form={form} />;
   if (mount.custom) return <ExtensionTerminal visible={visible} />;
   return null;
 }
@@ -140,7 +147,7 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
     >
       {mounts.map(({ slot: presentation, mount }) => (
         <div key={`${presentation.slotId}:${slot}`} data-extension-slot={presentation.slotId}>
-          <SlotBody mount={mount} />
+          <SlotBody mount={mount} family={presentation.family} />
         </div>
       ))}
     </div>
@@ -183,7 +190,7 @@ export function ExtensionDockStrip() {
       <div className="flex flex-col gap-2">
         {docked.map(({ slot, mount }) => (
           <div key={slot.slotId} data-extension-slot={slot.slotId}>
-            <SlotBody mount={mount} />
+            <SlotBody mount={mount} family={slot.family} />
           </div>
         ))}
       </div>
@@ -247,7 +254,8 @@ const FLOAT_RESIZE_HANDLES: { edge: FloatResizeEdge; className: string }[] = [
   },
   {
     edge: "s",
-    className: "absolute inset-x-3 bottom-0 z-20 h-1.5 cursor-s-resize touch-none hover:bg-accent/25",
+    className:
+      "absolute inset-x-3 bottom-0 z-20 h-1.5 cursor-s-resize touch-none hover:bg-accent/25",
   },
   {
     edge: "e",
@@ -443,7 +451,12 @@ function ExtensionFloatShell({
     setPixel(next);
   };
 
-  const finishPointer = (pointerId: number, clientX: number, clientY: number, target: EventTarget | null) => {
+  const finishPointer = (
+    pointerId: number,
+    clientX: number,
+    clientY: number,
+    target: EventTarget | null,
+  ) => {
     const session = drag.current;
     if (!session || session.pointerId !== pointerId) return;
     drag.current = null;
@@ -462,7 +475,10 @@ function ExtensionFloatShell({
         if (shell) shell.style.pointerEvents = previousPointerEvents;
       }
       const drop = homeFromDropTarget(hit);
-      if (drop && (slot.family === "widget" || (slot.family === "custom" && drop.kind === "dock"))) {
+      if (
+        drop &&
+        (slot.family === "widget" || (slot.family === "custom" && drop.kind === "dock"))
+      ) {
         void persistRect(current, drop);
         return;
       }
@@ -492,8 +508,10 @@ function ExtensionFloatShell({
       edge,
     };
     documentDrag.current?.();
-    const move = (native: PointerEvent) => applyPointerDelta(native.pointerId, native.clientX, native.clientY);
-    const up = (native: PointerEvent) => finishPointer(native.pointerId, native.clientX, native.clientY, native.target);
+    const move = (native: PointerEvent) =>
+      applyPointerDelta(native.pointerId, native.clientX, native.clientY);
+    const up = (native: PointerEvent) =>
+      finishPointer(native.pointerId, native.clientX, native.clientY, native.target);
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
     document.addEventListener("pointercancel", up);
@@ -626,7 +644,7 @@ function ExtensionFloatShell({
         </button>
       </div>
       <div className="relative z-0 min-h-0 flex-1 overflow-auto px-3 py-2">
-        <SlotBody mount={mount} visible={visible} />
+        <SlotBody mount={mount} family={slot.family} visible={visible} />
       </div>
       {FLOAT_RESIZE_HANDLES.map(({ edge, className }) => (
         <div

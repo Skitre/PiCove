@@ -472,6 +472,99 @@ describe("RightDock extension-deck-v1", () => {
     expect(edge.querySelector("span")).toBeNull();
   });
 
+  it("renders structured dock widgets as key-value rows and strips ANSI escapes", () => {
+    resetExtensionDeckV1GateForTests(true);
+    const other = {
+      invocationKind: "command" as const,
+      extensionId: "ext-other",
+      extensionDisplayName: "Other",
+      sourceKind: "package" as const,
+      commandName: "other",
+    };
+    act(() => {
+      useAppStore.getState().setDesktopSettings({
+        theme: "system",
+        language: "en",
+        restoreLastSession: true,
+        autoRestartHostOnce: true,
+        extensionDecisionPresentation: "auto",
+        terminalProfile: "auto",
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: {
+            "pi-subagents": {
+              widget: { home: { kind: "dock", group: "primary", order: 0 } },
+            },
+            "ext-other": {
+              widget: { home: { kind: "dock", group: "primary", order: 1 } },
+            },
+          },
+        },
+      });
+      useAppStore.getState().setExtensionWidget({
+        key: "fleet",
+        widget: { running: 2, note: "ok" },
+        origin: trusted,
+        hostInstanceId: "h1",
+        workspaceId: "w1",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      });
+      useAppStore.getState().setExtensionWidget({
+        key: "other",
+        widget: ["\u001b[32mready\u001b[0m"],
+        origin: other,
+        hostInstanceId: "h1",
+        workspaceId: "w1",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      });
+    });
+    render(<RightDock />);
+
+    const area = document.querySelector("[data-extension-dock-area]")!;
+    expect([...area.querySelectorAll("dt")].map((node) => node.textContent)).toEqual([
+      "running",
+      "note",
+    ]);
+    expect([...area.querySelectorAll("dd")].map((node) => node.textContent)).toEqual(["2", "ok"]);
+    expect(area).toHaveTextContent("ready");
+    expect(area.textContent).not.toContain("[");
+    expect(area.querySelector("pre")).toBeNull();
+  });
+
+  it("lists docked statuses as key and wrapping text rows", () => {
+    resetExtensionDeckV1GateForTests(true);
+    act(() => {
+      useAppStore.getState().setDesktopSettings({
+        theme: "system",
+        language: "en",
+        restoreLastSession: true,
+        autoRestartHostOnce: true,
+        extensionDecisionPresentation: "auto",
+        terminalProfile: "auto",
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: {
+            "pi-subagents": {
+              status: { home: { kind: "dock", group: "primary", order: 0 } },
+            },
+          },
+        },
+      });
+    });
+    useAppStore.getState().setExtensionStatus("fleet", "multi\nline status", trusted);
+    render(<RightDock />);
+
+    const area = document.querySelector("[data-extension-dock-area]")!;
+    expect(area.querySelector("dt")?.textContent).toBe("fleet");
+    const value = area.querySelector("dd");
+    expect(value?.textContent).toBe("multi\nline status");
+    expect(value).toHaveClass("whitespace-pre-wrap");
+  });
+
   it("closes custom content without deleting the global profile", () => {
     resetExtensionDeckV1GateForTests(true);
     useAppStore.getState().setDesktopSettings({

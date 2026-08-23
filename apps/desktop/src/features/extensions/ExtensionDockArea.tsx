@@ -28,6 +28,7 @@ import {
   extensionUiHomeMessageKey,
 } from "../../lib/extension-ui-home-message";
 import { observedExtensionDisplayName } from "../../lib/extension-ui-observation";
+import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
 import {
   commitExtensionPresentationHome,
   commitExtensionUiSettings,
@@ -36,10 +37,7 @@ import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-s
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
-import {
-  closeExtensionTerminalWithFallback,
-  ExtensionTerminal,
-} from "../dock/ExtensionTerminal";
+import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
 
 function slotLabel(item: DockedPresentationSlot, translate: ReturnType<typeof useT>): string {
   const name = item.extensionId ? observedExtensionDisplayName(item.extensionId) : item.slotId;
@@ -107,8 +105,7 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     const isNewRequest =
-      dockedCustomRequestId !== null &&
-      dockedCustomRequestId !== previousCustomRequestId.current;
+      dockedCustomRequestId !== null && dockedCustomRequestId !== previousCustomRequestId.current;
     previousCustomRequestId.current = dockedCustomRequestId;
     if (!isNewRequest || !dockedCustomGroup || !dockedCustomSlotId) return;
     setActive((current) => ({ ...current, [dockedCustomGroup]: dockedCustomSlotId }));
@@ -322,7 +319,10 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                         }}
                       >
                         {closingCustomId === item.mount.custom?.requestId ? (
-                          <LoaderCircle size={11} className="animate-spin motion-reduce:animate-none" />
+                          <LoaderCircle
+                            size={11}
+                            className="animate-spin motion-reduce:animate-none"
+                          />
                         ) : (
                           <X size={11} />
                         )}
@@ -347,10 +347,16 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                   onDragEnd={endExtensionUiDrag}
                 >
                   {item.mount.widgets?.length ? (
-                    <ExtensionWidgetRows widgets={item.mount.widgets} />
+                    <ExtensionWidgetRows
+                      widgets={item.mount.widgets}
+                      form={rendererFormFor("widget", "dock")}
+                    />
                   ) : null}
                   {item.mount.statuses?.length ? (
-                    <ExtensionStatusRows statuses={item.mount.statuses} />
+                    <ExtensionStatusRows
+                      statuses={item.mount.statuses}
+                      form={rendererFormFor("status", "dock")}
+                    />
                   ) : null}
                   {item.mount.custom ? (
                     <ExtensionTerminal visible={visible && selected === item.slotId} />
@@ -383,7 +389,9 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
             <span
               aria-hidden="true"
               className={
-                direction === "row" ? "h-full w-1 rounded bg-accent" : "h-1 w-full rounded bg-accent"
+                direction === "row"
+                  ? "h-full w-1 rounded bg-accent"
+                  : "h-1 w-full rounded bg-accent"
               }
             />
           )}

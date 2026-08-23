@@ -502,6 +502,73 @@ describe("Extension presentation mounts", () => {
     expect(anchor.getAttribute("data-extension-drop-active")).toBe("false");
   });
 
+  it("shows a one-line widget summary on the anchor strip and expands to full content", async () => {
+    useAppStore.getState().setExtensionWidget({
+      key: "fleet",
+      widget: ["first line", "second line"],
+      placement: "aboveEditor",
+      origin: trusted,
+      hostInstanceId: "h1",
+      workspaceId: "w",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+    });
+    render(<ChatPage />);
+    const anchor = () => document.querySelector("[data-extension-anchor='aboveComposer']")!;
+    expect(anchor()).toHaveTextContent("first line");
+    expect(anchor()).toHaveTextContent("second line");
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse extension widget fleet" }));
+    expect(anchor()).toHaveTextContent("first line");
+    expect(anchor()).not.toHaveTextContent("second line");
+    expect(anchor().querySelector("[data-extension-widget-summary]")).toHaveTextContent(
+      "first line",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Expand extension widget fleet" }));
+    expect(anchor()).toHaveTextContent("second line");
+  });
+
+  it("renders object widgets as key-value rows in a float panel", () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    useAppStore.getState().setExtensionWidget({
+      key: "fleet",
+      widget: { running: 2, label: "ok", done: false },
+      origin: trusted,
+      hostInstanceId: "h1",
+      workspaceId: "w",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+    });
+    render(<ChatPage />);
+
+    const dialog = screen.getByRole("dialog", { name: "pi-subagents Widget" });
+    expect(dialog.querySelectorAll("dt")).toHaveLength(3);
+    expect([...dialog.querySelectorAll("dt")].map((node) => node.textContent)).toEqual([
+      "running",
+      "label",
+      "done",
+    ]);
+    expect([...dialog.querySelectorAll("dd")].map((node) => node.textContent)).toEqual([
+      "2",
+      "ok",
+      "false",
+    ]);
+    expect(dialog.querySelector("pre")).toBeNull();
+  });
+
   it("dismisses the undo toast without reversing the change", async () => {
     await commitExtensionPresentationHome({
       extensionId: "pi-subagents",
