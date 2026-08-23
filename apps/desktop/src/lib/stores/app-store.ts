@@ -198,6 +198,13 @@ export type AppState = EpochState & {
    */
   authBlocked: { providerId: string | null } | null;
   desktopSettings: DesktopSettings | null;
+  /**
+   * UI language for a surface that has no DesktopSettings of its own. A
+   * detached Extension Float never reads settings — the main window forwards
+   * its language, and this is where that lands so the shared renderers
+   * translate the same way in both containers.
+   */
+  surfaceLanguage: DesktopSettings["language"];
   extensionUiRequest: ExtensionUiRequestState | null;
   extensionUiQueue: ExtensionUiRequestState[];
   extensionDecisionGroups: Record<string, ExtensionDecisionGroupState>;
@@ -257,6 +264,7 @@ export type AppState = EpochState & {
   setPackages: (p: PackageSnapshot | null) => void;
   setTools: (t: ToolSnapshot | null) => void;
   setDesktopSettings: (d: DesktopSettings | null) => void;
+  setSurfaceLanguage: (language: DesktopSettings["language"]) => void;
   setExtensionUiRequest: (r: ExtensionUiRequestState | null) => void;
   enqueueExtensionUiRequest: (r: ExtensionUiRequestState) => void;
   presentCandidateExtensionUiRequest: (r: ExtensionUiRequestState) => void;
@@ -350,6 +358,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   authBlocked: null,
   ...emptyEpoch(),
   desktopSettings: null,
+  surfaceLanguage: undefined,
   extensionUiRequest: null,
   extensionUiQueue: [],
   extensionDecisionGroups: {},
@@ -772,6 +781,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         : null,
     }),
+  setSurfaceLanguage: (surfaceLanguage) => set({ surfaceLanguage }),
   setExtensionUiRequest: (request) =>
     set((state) => {
       const now = Date.now();

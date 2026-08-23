@@ -29,10 +29,7 @@ export function pushExtensionTerminalFrame(requestId: string, data: string): voi
   );
 }
 
-export function subscribeExtensionTerminal(
-  requestId: string,
-  listener: FrameListener,
-): () => void {
+export function subscribeExtensionTerminal(requestId: string, listener: FrameListener): () => void {
   const buffered = buffers.get(requestId);
   buffers.delete(requestId);
   if (buffered) listener(buffered);
@@ -45,4 +42,13 @@ export function subscribeExtensionTerminal(
 export function clearExtensionTerminal(requestId: string): void {
   buffers.delete(requestId);
   listeners.delete(requestId);
+}
+
+/**
+ * Whether some surface is already writing this stream. A detached Float relays
+ * frames out of this bus, so on re-attach it must hand its retained tail back —
+ * but only when nothing is listening, or the tail would be written twice.
+ */
+export function hasExtensionTerminalListener(requestId: string): boolean {
+  return listeners.has(requestId);
 }

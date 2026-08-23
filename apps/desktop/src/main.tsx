@@ -2,6 +2,9 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { RotateCw } from "lucide-react";
 import { App } from "./app/App";
+import { FloatWindowRoot } from "./features/extensions/FloatWindowRoot";
+import { currentSurfaceRoute } from "./lib/float-surface";
+import { applyStoredTheme } from "./lib/theme";
 import "@xterm/xterm/css/xterm.css";
 import "streamdown/styles.css";
 import "katex/dist/katex.min.css";
@@ -78,10 +81,26 @@ try {
   // Local storage can be unavailable in hardened WebViews.
 }
 
-createRoot(root).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
-  </StrictMode>,
-);
+const surface = currentSurfaceRoute();
+
+if (surface.kind === "float") {
+  // A detached Extension Float boots one presentation slot, never the
+  // application shell. Theme lives in same-origin local storage, so the window
+  // paints correctly before any content arrives from the main window.
+  applyStoredTheme();
+  createRoot(root).render(
+    <StrictMode>
+      <AppErrorBoundary>
+        <FloatWindowRoot slotId={surface.slotId} />
+      </AppErrorBoundary>
+    </StrictMode>,
+  );
+} else {
+  createRoot(root).render(
+    <StrictMode>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </StrictMode>,
+  );
+}

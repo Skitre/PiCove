@@ -35,6 +35,7 @@ import { tCurrent, useT } from "../lib/i18n/use-t";
 import { shouldRestoreLastSession } from "./session-restore";
 import { StartupScreen, resolveStartupStage, useInitialStartupScreen } from "./StartupScreen";
 import { DraftPersistenceController } from "./DraftPersistenceController";
+import { ExtensionFloatWindowController } from "../features/extensions/ExtensionFloatWindowController";
 import {
   extensionUiHostConfigureParams,
   hydrateDesktopSettings,
@@ -1045,6 +1046,7 @@ export function App() {
       data-desynchronized={desynchronized ? "true" : "false"}
     >
       <DraftPersistenceController />
+      <ExtensionFloatWindowController />
       {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
         <WindowControls platform={windowControlsPlatform} />
       )}

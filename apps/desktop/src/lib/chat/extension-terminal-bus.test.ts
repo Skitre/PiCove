@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clearExtensionTerminal,
+  hasExtensionTerminalListener,
   pushExtensionTerminalFrame,
   subscribeExtensionTerminal,
 } from "./extension-terminal-bus";
@@ -52,5 +53,14 @@ describe("extension-terminal-bus", () => {
     expect(b).toEqual(["for-b"]);
     clearExtensionTerminal("ra");
     clearExtensionTerminal("rb");
+  });
+
+  it("reports whether a surface is reading the stream, so a relay knows when to hand its tail back", () => {
+    expect(hasExtensionTerminalListener("rl")).toBe(false);
+    const unsubscribe = subscribeExtensionTerminal("rl", () => {});
+    expect(hasExtensionTerminalListener("rl")).toBe(true);
+    unsubscribe();
+    expect(hasExtensionTerminalListener("rl")).toBe(false);
+    clearExtensionTerminal("rl");
   });
 });
