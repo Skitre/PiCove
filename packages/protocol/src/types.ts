@@ -774,6 +774,43 @@ export type NormalizedFloatRect = {
   height: number;
 };
 
+/** Logical-pixel rectangle in the platform's global desktop coordinate space. */
+export type ScreenRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Enough monitor identity to decide, on a later launch, whether a stored
+ * detached placement still refers to a display that is present. Name is
+ * optional because not every platform reports a stable one.
+ *
+ * `position`/`size` are the display's full bounds and carry identity, because
+ * they do not move when the user hides a Dock or taskbar. `workArea` is the
+ * region a window may actually occupy and is what placement clamps against —
+ * clamping to the full bounds can leave a title bar under a menu bar, which is
+ * exactly the unreachable window the clamp exists to prevent.
+ */
+export type MonitorDescriptor = {
+  name?: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  scaleFactor: number;
+  workArea?: ScreenRect;
+};
+
+/**
+ * Where a detached Float sits. Stored alongside — never instead of — the
+ * attached `rect`, so re-attaching and monitor-recovery fallback both have a
+ * defined destination without inventing geometry.
+ */
+export type DetachedFloatPlacement = {
+  monitor: MonitorDescriptor;
+  rect: ScreenRect;
+};
+
 export type DockGroupId = "primary" | "secondary";
 
 export type PresentationHome =
@@ -781,7 +818,13 @@ export type PresentationHome =
   | { kind: "followHost" }
   | { kind: "anchor"; slot: "aboveComposer" | "belowComposer" }
   | { kind: "dock"; group: DockGroupId; order: number }
-  | { kind: "float"; rect: NormalizedFloatRect; pinned?: boolean }
+  | {
+      kind: "float";
+      rect: NormalizedFloatRect;
+      pinned?: boolean;
+      /** Present only while the Float lives in its own window. */
+      detached?: DetachedFloatPlacement;
+    }
   | { kind: "inline" }
   | { kind: "modal" }
   | { kind: "hidden" };

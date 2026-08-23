@@ -2,6 +2,7 @@ mod browser_surface;
 mod commands;
 mod desktop_settings;
 mod draft_store;
+mod extension_float;
 mod extension_ui_settings;
 mod pi_host;
 #[cfg(test)]
@@ -11,6 +12,7 @@ mod system_tray;
 
 use desktop_settings::DesktopSettingsStore;
 use draft_store::DraftStore;
+use extension_float::ExtensionFloatManager;
 use pi_host::PiHostManager;
 use shell_terminal::ShellTerminalManager;
 use tauri::{Emitter, Listener, Manager};
@@ -22,6 +24,7 @@ pub struct AppState {
     pub host: Mutex<PiHostManager>,
     pub terminals: Mutex<ShellTerminalManager>,
     pub browsers: Mutex<BrowserSurfaceManager>,
+    pub floats: Mutex<ExtensionFloatManager>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -45,7 +48,16 @@ pub fn run() {
                 host: Mutex::new(host),
                 terminals: Mutex::new(ShellTerminalManager::new()),
                 browsers: Mutex::new(BrowserSurfaceManager::new()),
+                floats: Mutex::new(ExtensionFloatManager::new()),
             });
+
+            // A crash can leave detached Extension Float windows behind. Destroy
+            // them before any placement is restored so no orphan outlives the
+            // application, and so a restored slot never finds a stale window.
+            {
+                let mut floats = ExtensionFloatManager::new();
+                floats.destroy_all(app.handle());
+            }
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -148,6 +160,13 @@ pub fn run() {
             commands::browser_surface_set_visible,
             commands::browser_surface_focus,
             commands::browser_surface_close,
+            commands::extension_float_monitors,
+            commands::extension_float_open,
+            commands::extension_float_close,
+            commands::extension_float_set_bounds,
+            commands::extension_float_set_always_on_top,
+            commands::extension_float_focus,
+            commands::extension_float_close_all,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -167,6 +186,11 @@ pub fn run() {
                 let handle = app_handle.clone();
                 tauri::async_runtime::block_on(async move {
                     let state = handle.state::<AppState>();
+                    // Float windows go first: they are bounded by the main
+                    // window and must never outlive the application.
+                    let mut floats = state.floats.lock().await;
+                    floats.destroy_all(&handle);
+                    drop(floats);
                     let mut browsers = state.browsers.lock().await;
                     browsers.shutdown_all();
                     drop(browsers);

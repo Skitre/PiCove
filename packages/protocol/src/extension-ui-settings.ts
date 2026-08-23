@@ -1,13 +1,20 @@
 import {
+  MAX_EXTENSION_UI_DETACHED_SIZE,
   MAX_EXTENSION_UI_DISPLAY_NAME_LENGTH,
   MAX_EXTENSION_UI_DOCK_ORDER,
   MAX_EXTENSION_UI_DOCK_SIZE,
   MAX_EXTENSION_UI_EXTENSION_ID_LENGTH,
   MAX_EXTENSION_UI_IDENTITIES,
+  MAX_EXTENSION_UI_MONITOR_NAME_LENGTH,
+  MAX_EXTENSION_UI_SCALE_FACTOR,
+  MAX_EXTENSION_UI_SCREEN_COORDINATE,
   MAX_EXTENSION_UI_SETTINGS_BYTES,
+  MIN_EXTENSION_UI_DETACHED_SIZE,
   MIN_EXTENSION_UI_DOCK_SIZE,
+  MIN_EXTENSION_UI_SCALE_FACTOR,
 } from "./limits.js";
 import type {
+  DetachedFloatPlacement,
   DockGroupId,
   ExtensionDialogPresentationOverrides,
   ExtensionDialogPresentationPreference,
@@ -16,9 +23,11 @@ import type {
   ExtensionSurfaceFamily,
   ExtensionUiOrigin,
   ExtensionUiSettings,
+  MonitorDescriptor,
   ObservedExtensionUiCapabilities,
   PresentationHome,
   PresentationPreference,
+  ScreenRect,
 } from "./types.js";
 import { EXTENSION_SURFACE_FAMILIES } from "./types.js";
 
@@ -136,6 +145,71 @@ function isNormalizedFloatRect(value: unknown): boolean {
   );
 }
 
+function isScreenCoordinate(value: unknown): value is number {
+  return (
+    isFiniteNumber(value) &&
+    value >= -MAX_EXTENSION_UI_SCREEN_COORDINATE &&
+    value <= MAX_EXTENSION_UI_SCREEN_COORDINATE
+  );
+}
+
+function isDetachedExtent(value: unknown): value is number {
+  return (
+    isFiniteNumber(value) &&
+    value >= MIN_EXTENSION_UI_DETACHED_SIZE &&
+    value <= MAX_EXTENSION_UI_DETACHED_SIZE
+  );
+}
+
+function isScreenRect(value: unknown): value is ScreenRect {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["x", "y", "width", "height"]) &&
+    isScreenCoordinate(value.x) &&
+    isScreenCoordinate(value.y) &&
+    isDetachedExtent(value.width) &&
+    isDetachedExtent(value.height)
+  );
+}
+
+function isMonitorDescriptor(value: unknown): value is MonitorDescriptor {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ["position", "size", "scaleFactor"], ["name", "workArea"])
+  ) {
+    return false;
+  }
+  const position = value.position;
+  const size = value.size;
+  return (
+    (value.name === undefined ||
+      (typeof value.name === "string" &&
+        value.name.length > 0 &&
+        value.name.length <= MAX_EXTENSION_UI_MONITOR_NAME_LENGTH)) &&
+    isPlainObject(position) &&
+    hasExactKeys(position, ["x", "y"]) &&
+    isScreenCoordinate(position.x) &&
+    isScreenCoordinate(position.y) &&
+    isPlainObject(size) &&
+    hasExactKeys(size, ["width", "height"]) &&
+    isDetachedExtent(size.width) &&
+    isDetachedExtent(size.height) &&
+    isFiniteNumber(value.scaleFactor) &&
+    value.scaleFactor >= MIN_EXTENSION_UI_SCALE_FACTOR &&
+    value.scaleFactor <= MAX_EXTENSION_UI_SCALE_FACTOR &&
+    (value.workArea === undefined || isScreenRect(value.workArea))
+  );
+}
+
+function isDetachedFloatPlacement(value: unknown): value is DetachedFloatPlacement {
+  return (
+    isPlainObject(value) &&
+    hasExactKeys(value, ["monitor", "rect"]) &&
+    isMonitorDescriptor(value.monitor) &&
+    isScreenRect(value.rect)
+  );
+}
+
 export function legalPresentationHomeKinds(
   family: ExtensionSurfaceFamily,
 ): ReadonlyArray<PresentationHome["kind"]> {
@@ -171,9 +245,10 @@ export function isPresentationHomeForFamily(
       );
     case "float":
       return (
-        hasExactKeys(value, ["kind", "rect"], ["pinned"]) &&
+        hasExactKeys(value, ["kind", "rect"], ["pinned", "detached"]) &&
         isNormalizedFloatRect(value.rect) &&
-        (value.pinned === undefined || typeof value.pinned === "boolean")
+        (value.pinned === undefined || typeof value.pinned === "boolean") &&
+        (value.detached === undefined || isDetachedFloatPlacement(value.detached))
       );
     default:
       return false;

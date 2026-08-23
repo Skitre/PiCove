@@ -1,0 +1,30 @@
+{
+  "$schema": "https://scala.tauri.app/config.schema.json",
+  "identifier": "extension-float",
+  "description": "Detached Extension Float windows. A Float is a thin client: it renders one presentation slot, talks only to the main window over app events, and never reaches the Host transport, the settings store, the shell, the browser surface, dialogs, or the updater. Clipboard text is allowed because a detached custom() panel is a real terminal, and the clipboard is the user's own, not a channel into PiDeck state.",
+  "windows": ["pideck-float-*"],
+  "remote": {
+    "urls": ["http://127.0.0.1:1420/*"]
+  },
+  "permissions": [
+    "core:path:default",
+    "core:event:default",
+    "core:app:allow-version",
+    "core:webview:allow-internal-toggle-devtools",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-outer-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-scale-factor",
+    "core:window:allow-current-monitor",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-title",
+    "core:window:allow-set-theme",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text"
+  ]
+}

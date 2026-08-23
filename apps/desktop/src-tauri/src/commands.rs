@@ -1,6 +1,7 @@
 use crate::browser_surface::{BrowserSurfaceBounds, BrowserSurfaceSnapshot};
 use crate::desktop_settings::{DesktopSettings, DesktopSettingsSnapshot};
 use crate::draft_store::{DraftApplyResult, DraftMutation, DraftWorkspaceSnapshot};
+use crate::extension_float::{FloatWindowRect, FloatWindowSnapshot};
 use crate::shell_terminal::{
     shell_profile_catalog, ShellProfileCatalog, ShellTerminalCreateResult, ShellTerminalEvent,
 };
@@ -21,9 +22,11 @@ pub async fn desktop_settings_get(
 
 #[tauri::command]
 pub async fn desktop_settings_patch(
+    webview: tauri::Webview,
     state: State<'_, AppState>,
     patch: Value,
 ) -> Result<DesktopSettings, String> {
+    require_main_webview(&webview)?;
     let mut store = state.settings.lock().await;
     let next = store.patch(patch)?;
     // Propagate agentDir / autoRestart to host manager
@@ -174,8 +177,25 @@ fn looks_binary_text(text: &str) -> bool {
     text.contains('\0')
 }
 
+/// A detached Extension Float window is a thin client: it renders one
+/// presentation slot and must never reach the Host transport or the settings
+/// store. Capabilities already withhold the core permissions from those
+/// webviews; this is the matching guard for application-defined commands, which
+/// capabilities do not gate.
+fn require_main_webview(webview: &tauri::Webview) -> Result<(), String> {
+    if crate::extension_float::is_float_window_label(webview.window().label()) {
+        return Err("this command is not available to an extension float window".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn pi_host_send(state: State<'_, AppState>, line: String) -> Result<(), String> {
+pub async fn pi_host_send(
+    webview: tauri::Webview,
+    state: State<'_, AppState>,
+    line: String,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
     let mut host = state.host.lock().await;
     host.send_line(line).await
 }
@@ -315,6 +335,102 @@ pub async fn browser_surface_close(
 ) -> Result<bool, String> {
     let mut browsers = state.browsers.lock().await;
     browsers.close(&surface_id)
+}
+
+// --- Detached Extension Float windows -------------------------------------
+//
+// Only the main window may manage Float windows: the main window owns the
+// presentation profile and is the only settings writer, so a Float window that
+// could open or move another Float would fork that ownership.
+
+/// Synchronous on purpose. Tauri runs `async` commands on the async runtime,
+/// but monitor enumeration must happen on the main thread — macOS returns an
+/// empty screen list off it, which would silently reattach every detached Float
+/// as "monitor missing". A sync command runs on the main thread.
+#[tauri::command]
+pub fn extension_float_monitors(
+    webview: tauri::Webview,
+    app: AppHandle,
+) -> Result<Vec<crate::extension_ui_settings::MonitorDescriptor>, String> {
+    require_main_webview(&webview)?;
+    crate::extension_float::available_monitors(&app)
+}
+
+#[tauri::command]
+pub async fn extension_float_open(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    slot_id: String,
+    rect: FloatWindowRect,
+    title: String,
+    always_on_top: bool,
+) -> Result<FloatWindowSnapshot, String> {
+    require_main_webview(&webview)?;
+    let mut floats = state.floats.lock().await;
+    floats.open(&app, &slot_id, &rect, &title, always_on_top)
+}
+
+#[tauri::command]
+pub async fn extension_float_close(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    slot_id: String,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    let mut floats = state.floats.lock().await;
+    floats.close(&app, &slot_id)
+}
+
+#[tauri::command]
+pub async fn extension_float_set_bounds(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    slot_id: String,
+    rect: FloatWindowRect,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    let floats = state.floats.lock().await;
+    floats.set_bounds(&app, &slot_id, &rect)
+}
+
+#[tauri::command]
+pub async fn extension_float_set_always_on_top(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    slot_id: String,
+    always_on_top: bool,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    let floats = state.floats.lock().await;
+    floats.set_always_on_top(&app, &slot_id, always_on_top)
+}
+
+#[tauri::command]
+pub async fn extension_float_focus(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    slot_id: String,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    let floats = state.floats.lock().await;
+    floats.focus(&app, &slot_id)
+}
+
+#[tauri::command]
+pub async fn extension_float_close_all(
+    webview: tauri::Webview,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    let mut floats = state.floats.lock().await;
+    floats.destroy_all(&app);
+    Ok(())
 }
 
 /// What the file manager should do with a validated local path.

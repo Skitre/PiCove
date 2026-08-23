@@ -77,3 +77,16 @@ export const MAX_EXTENSION_UI_FLOATS = 8;
 export const MAX_EXTENSION_UI_DOCK_ORDER = 255;
 export const MIN_EXTENSION_UI_DOCK_SIZE = 0.2;
 export const MAX_EXTENSION_UI_DOCK_SIZE = 0.8;
+
+/**
+ * Detached Float placement bounds. Screen coordinates are logical pixels in the
+ * platform's global desktop space, which puts secondary monitors at negative or
+ * large positive offsets — hence a symmetric bound far wider than any single
+ * display. These reject corrupt or hostile values; they are not layout rules.
+ */
+export const MAX_EXTENSION_UI_SCREEN_COORDINATE = 262_144;
+export const MIN_EXTENSION_UI_DETACHED_SIZE = 120;
+export const MAX_EXTENSION_UI_DETACHED_SIZE = 65_536;
+export const MIN_EXTENSION_UI_SCALE_FACTOR = 0.1;
+export const MAX_EXTENSION_UI_SCALE_FACTOR = 16;
+export const MAX_EXTENSION_UI_MONITOR_NAME_LENGTH = 256;

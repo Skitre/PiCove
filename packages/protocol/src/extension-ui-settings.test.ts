@@ -51,6 +51,80 @@ describe("Extension Deck settings contract", () => {
     expect(legalPresentationHomeKinds("status")).toEqual(["anchor", "dock", "hidden"]);
   });
 
+  describe("detached Float placement", () => {
+    const rect = { x: 0.2, y: 0.1, width: 320, height: 180 };
+    const monitor = {
+      name: "DELL U2419H",
+      position: { x: 1512, y: 0 },
+      size: { width: 1920, height: 1080 },
+      scaleFactor: 1,
+    };
+    const detached = { monitor, rect: { x: 1600, y: 120, width: 400, height: 300 } };
+    const float = (extra: Record<string, unknown>) => ({ kind: "float", rect, ...extra });
+
+    it("keeps `detached` optional so a V1 file still reads as an attached Float", () => {
+      expect(isPresentationHomeForFamily("widget", float({}))).toBe(true);
+      expect(isPresentationHomeForFamily("widget", float({ pinned: true }))).toBe(true);
+    });
+
+    it("accepts a well-formed placement for the families that may float", () => {
+      expect(isPresentationHomeForFamily("widget", float({ detached }))).toBe(true);
+      expect(isPresentationHomeForFamily("custom", float({ detached }))).toBe(true);
+      expect(
+        isPresentationHomeForFamily("widget", {
+          ...float({ detached: { monitor: { ...monitor, name: undefined }, rect: detached.rect } }),
+        }),
+      ).toBe(true);
+    });
+
+    it("cannot smuggle a detached Float into a family that may not float", () => {
+      expect(isPresentationHomeForFamily("status", float({ detached }))).toBe(false);
+      expect(isPresentationHomeForFamily("blockingDialog", float({ detached }))).toBe(false);
+    });
+
+    it.each([
+      ["missing monitor", { rect: detached.rect }],
+      ["missing rect", { monitor }],
+      ["unknown key", { ...detached, zIndex: 3 }],
+      ["non-finite coordinate", { monitor, rect: { ...detached.rect, x: Number.NaN } }],
+      ["coordinate past the bound", { monitor, rect: { ...detached.rect, x: 1e9 } }],
+      ["window narrower than the minimum", { monitor, rect: { ...detached.rect, width: 4 } }],
+      ["zero scale factor", { monitor: { ...monitor, scaleFactor: 0 }, rect: detached.rect }],
+      ["absurd scale factor", { monitor: { ...monitor, scaleFactor: 99 }, rect: detached.rect }],
+      ["empty monitor name", { monitor: { ...monitor, name: "" }, rect: detached.rect }],
+      ["monitor without size", { monitor: { ...monitor, size: undefined }, rect: detached.rect }],
+    ])("rejects a placement with a %s", (_label, badDetached) => {
+      expect(isPresentationHomeForFamily("widget", float({ detached: badDetached }))).toBe(false);
+    });
+
+    it("drops only the offending family when a placement is corrupt", () => {
+      const repaired = sanitizeExtensionUiSettings({
+        version: 1,
+        presentations: {
+          ext_a: {
+            widget: { home: float({ detached: { monitor, rect: { x: 0, y: 0 } } }) },
+            status: { home: { kind: "dock", group: "primary", order: 1 } },
+          },
+        },
+        dock: { direction: "row", secondaryEnabled: false },
+        observedCapabilities: {},
+      });
+      expect(repaired.presentations.ext_a).toEqual({
+        status: { home: { kind: "dock", group: "primary", order: 1 } },
+      });
+    });
+
+    it("preserves a valid placement through sanitization", () => {
+      const repaired = sanitizeExtensionUiSettings({
+        version: 1,
+        presentations: { ext_a: { widget: { home: float({ detached }) } } },
+        dock: { direction: "row", secondaryEnabled: false },
+        observedCapabilities: {},
+      });
+      expect(repaired.presentations.ext_a?.widget?.home).toEqual(float({ detached }));
+    });
+  });
+
   it("rejects oversized identity maps and unknown versions", () => {
     const tooMany: Record<string, { home: { kind: "followHost" } }> = {};
     for (let index = 0; index < MAX_EXTENSION_UI_IDENTITIES + 1; index += 1) {
