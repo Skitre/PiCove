@@ -370,6 +370,44 @@ describe("PiHostServer rehydrate barrier", () => {
     });
     expect(host.serviceGraphLock.isHeld()).toBe(false);
   });
+
+  it("sequences recovery reconciliation events after the barrier response", async () => {
+    const host = new PiHostServer({
+      agentDir: "C:/agent",
+      sdkVersion: "0.84.2",
+      getModelConfigHealth: () => ({ state: "ok", source: "ModelRegistry.getError" }),
+      capabilities: {
+        packageUpdateCheck: false,
+        extensionUi: true,
+        sessionExport: false,
+      },
+      handlers: {},
+      afterRehydrateBarrier: () => host.emit("host.statusChanged", host.buildStatus()),
+    });
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
+
+    await host.handleLine(
+      JSON.stringify({
+        protocolVersion: 1,
+        id: "55555555-5555-4555-8555-555555555555",
+        method: "system.rehydrate",
+        context: { expectedHostInstanceId: host.identity.hostInstanceId },
+        params: null,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const messages = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(messages.map((message) => message.method ?? message.sequence)).toEqual([
+      "system.rehydrate",
+      1,
+    ]);
+    expect(messages[0]).toMatchObject({ result: { watermark: 0 } });
+  });
 });
 
 describe("PiHostServer shutdown", () => {

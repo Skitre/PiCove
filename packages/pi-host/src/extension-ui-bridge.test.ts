@@ -226,6 +226,31 @@ describe("extension-ui-bridge", () => {
     await expect(p).resolves.toBe("beta");
   });
 
+  it("drops blank and duplicate select values after sanitization", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const ansiAlpha = "\u001b[31malpha\u001b[0m";
+    const pending = ui.select("Pick", ["", " \u001b[2K ", ansiAlpha, "alpha", "beta"]);
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+      options: Array<{ id: string; label: string }>;
+    };
+
+    expect(request.options).toEqual([
+      { id: "alpha", label: "alpha" },
+      { id: "beta", label: "beta" },
+    ]);
+    respondExtensionUi(request.requestId, "resolved", "alpha", id);
+    await expect(pending).resolves.toBe(ansiAlpha);
+
+    const requestCount = events.filter((event) => event.e === "extensionUi.request").length;
+    await expect(ui.select("Nothing", ["", " \t "])).resolves.toBeUndefined();
+    expect(events.filter((event) => event.e === "extensionUi.request")).toHaveLength(requestCount);
+  });
+
   it("bounds blocking payloads while preserving selected SDK option values", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({
@@ -1197,6 +1222,24 @@ describe("extension-ui-bridge", () => {
     await expect(editor).resolves.toBeUndefined();
   });
 
+  it("replaces cyclic arrays in widget payloads without recursing forever", () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+
+    ui.setWidget("cycle", cyclic as never);
+
+    expect(events.find((event) => event.e === "extensionUi.widgetChanged")?.p).toEqual({
+      key: "cycle",
+      widget: ["[Circular]"],
+      origin: UNKNOWN_ORIGIN,
+    });
+  });
+
   it("releases blocking candidate requests during activation and waits for bind completion", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const session = {
@@ -1646,6 +1689,49 @@ describe("extension-ui-bridge", () => {
     cancelPendingForIdentity(cancelId);
     await expect(panel).resolves.toBeUndefined();
     expect(events.some((x) => x.e === "extensionUi.customClosed")).toBe(true);
+  });
+
+  it("does not start a focused custom panel for a background Session", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const factory = vi.fn(() => ({ render: () => ["hidden"], invalidate: () => {} }));
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getCurrentIdentity: () => ({ ...id, sessionId: "foreground", sessionRevision: 2 }),
+    });
+
+    await expect(ui.custom(factory)).resolves.toBeUndefined();
+    expect(factory).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it("disposes an async custom component that resolves after cancellation", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const dispose = vi.fn();
+    let resolveFactory:
+      | ((component: {
+          render: () => string[];
+          invalidate: () => void;
+          dispose: () => void;
+        }) => void)
+      | undefined;
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const panel = ui.custom(
+      () =>
+        new Promise((resolve) => {
+          resolveFactory = resolve;
+        }),
+    );
+    await Promise.resolve();
+    cancelPendingForIdentity(id);
+    await expect(panel).resolves.toBeUndefined();
+
+    resolveFactory?.({ render: () => ["late"], invalidate: () => {}, dispose });
+    await Promise.resolve();
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("custom() cancels via protocol response without terminal input", async () => {
@@ -2119,6 +2205,54 @@ describe("Extension Deck origin capture", () => {
     expect(
       events.filter((event) => event.e === "extensionUi.statusChanged").at(-1)?.p,
     ).toMatchObject({ key: "slash", text: "", origin: trustedToolOrigin });
+    binding.cleanup();
+  });
+
+  it("replays identical widget and status keys independently per trusted Extension", async () => {
+    const events: Array<{ identity: HostIdentity; e: HostEventName; p: unknown }> = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    let origin = trustedToolOrigin;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => {},
+      emitForIdentity: (identity, e, p) => events.push({ identity, e, p }),
+      getIdentity: () => id,
+      getActiveInvocation: () => ({ origin, active: true }) as never,
+    });
+    const publish = await binding.activate();
+    publish();
+    ui!.setWidget("summary", ["A"]);
+    ui!.setStatus("state", "A ready");
+    origin = { ...trustedToolOrigin, extensionId: "ext_other", extensionDisplayName: "Other" };
+    ui!.setWidget("summary", ["B"]);
+    ui!.setStatus("state", "B ready");
+
+    events.length = 0;
+    binding.replayState();
+    expect(events.filter((event) => event.e === "extensionUi.widgetChanged")).toHaveLength(2);
+    expect(events.filter((event) => event.e === "extensionUi.statusChanged")).toHaveLength(2);
+
+    origin = trustedToolOrigin;
+    ui!.setWidget("summary", undefined);
+    ui!.setStatus("state", undefined);
+    events.length = 0;
+    binding.replayState();
+    expect(events.map((event) => event.p)).toEqual([
+      {
+        key: "summary",
+        widget: ["B"],
+        origin: expect.objectContaining({ extensionId: "ext_other" }),
+      },
+      {
+        key: "state",
+        text: "B ready",
+        origin: expect.objectContaining({ extensionId: "ext_other" }),
+      },
+    ]);
     binding.cleanup();
   });
 

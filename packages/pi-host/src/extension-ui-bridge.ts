@@ -164,6 +164,11 @@ function replaceOwner(target: ExtensionUiOwner, identity: HostIdentity): void {
   Object.assign(target, ownerFromIdentity(identity));
 }
 
+function liveStateIdentity(key: string, origin: unknown): string {
+  const candidate = origin as ExtensionUiOrigin | undefined;
+  return isTrustedExtensionUiOrigin(candidate) ? `${candidate.extensionId}\u0000${key}` : key;
+}
+
 export type ExtensionUiBridgeOptions = {
   emit: (event: HostEventName, payload: unknown) => void;
   emitForIdentity?: (identity: HostIdentity, event: HostEventName, payload: unknown) => void;
@@ -240,9 +245,13 @@ function prepareSelectOptions(values: string[]): {
   responseValues: Map<string, string>;
 } {
   const usedIds = new Set<string>();
+  const usedValues = new Set<string>();
   const responseValues = new Map<string, string>();
-  const options = values.slice(0, MAX_EXTENSION_UI_OPTIONS).map((value, index) => {
+  const options: PreparedSelectOption[] = [];
+  for (const [index, value] of values.entries()) {
     const sanitizedValue = stripAnsi(String(value));
+    if (!sanitizedValue.trim() || usedValues.has(sanitizedValue)) continue;
+    usedValues.add(sanitizedValue);
     const baseId = sanitizedValue.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH);
     let id = baseId;
     let attempt = 0;
@@ -252,9 +261,10 @@ function prepareSelectOptions(values: string[]): {
       id = `${baseId.slice(0, MAX_EXTENSION_UI_OPTION_ID_LENGTH - suffix.length)}${suffix}`;
     }
     usedIds.add(id);
-    responseValues.set(id, sanitizedValue);
-    return { id, label: sanitizedValue, metadataId: sanitizedValue };
-  });
+    responseValues.set(id, String(value));
+    options.push({ id, label: sanitizedValue, metadataId: sanitizedValue });
+    if (options.length === MAX_EXTENSION_UI_OPTIONS) break;
+  }
   return { options, responseValues };
 }
 
@@ -317,7 +327,13 @@ function normalizePiDeckDialogMetadata(value: unknown): NormalizedPiDeckDialogMe
 function sanitize(value: unknown, seen = new WeakSet<object>()): unknown {
   if (typeof value === "string") return stripAnsi(value);
   if (value === null || typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value)) return value.map((item) => sanitize(item, seen));
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return "[Circular]";
+    seen.add(value);
+    const out = value.map((item) => sanitize(item, seen));
+    seen.delete(value);
+    return out;
+  }
   if (typeof value === "object") {
     if (seen.has(value)) return "[Circular]";
     seen.add(value);
@@ -488,15 +504,16 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
   };
 
   const publishWidget = (
+    storageKey: string,
     key: string,
     widget: unknown,
     placement: "belowEditor" | undefined,
     origin: ExtensionUiOrigin,
   ) => {
     const live = widget !== null && widget !== undefined;
-    if (live) publishedWidgetKeys.add(key);
-    else publishedWidgetKeys.delete(key);
-    const resolvedOrigin = originForLiveKey(widgetOrigins, key, origin, live);
+    if (live) publishedWidgetKeys.add(storageKey);
+    else publishedWidgetKeys.delete(storageKey);
+    const resolvedOrigin = originForLiveKey(widgetOrigins, storageKey, origin, live);
     opts.emit("extensionUi.widgetChanged", {
       key,
       widget,
@@ -686,6 +703,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
   const ui: ExtensionUIContext = {
     select: async (title, options, dialogOpts) => {
       const prepared = prepareSelectOptions(options);
+      if (prepared.options.length === 0) return undefined;
       const value = await requestBlocking(
         "select",
         {
@@ -729,12 +747,9 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     setStatus: (key, text) => {
       const sanitizedKey = stripAnsi(String(key));
       const liveText = text === undefined ? "" : stripAnsi(String(text));
-      const origin = originForLiveKey(
-        statusOrigins,
-        sanitizedKey,
-        captureTrustedOrigin(),
-        liveText !== "",
-      );
+      const capturedOrigin = captureTrustedOrigin();
+      const storageKey = liveStateIdentity(sanitizedKey, capturedOrigin);
+      const origin = originForLiveKey(statusOrigins, storageKey, capturedOrigin, liveText !== "");
       opts.emit("extensionUi.statusChanged", {
         key: sanitizedKey,
         text: liveText,
@@ -750,9 +765,10 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       const sanitizedKey = stripAnsi(String(key));
       const placement = options?.placement === "belowEditor" ? "belowEditor" : undefined;
       const capturedOrigin = captureTrustedOrigin();
+      const storageKey = liveStateIdentity(sanitizedKey, capturedOrigin);
       const commandOrigin = activeCommandOrigin();
-      let replacingPublishedWidget = publishedWidgetKeys.has(sanitizedKey);
-      disposeWidgetFactory(sanitizedKey);
+      let replacingPublishedWidget = publishedWidgetKeys.has(storageKey);
+      disposeWidgetFactory(storageKey);
       if (typeof content === "function") {
         // Keep the prior snapshot visible until the replacement publishes its
         // first frame. A failed replacement clears it explicitly below.
@@ -799,7 +815,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
                 const snapshot = JSON.stringify(sanitizedLines);
                 if (snapshot !== lastSnapshot) {
                   lastSnapshot = snapshot;
-                  publishWidget(sanitizedKey, sanitizedLines, placement, factoryOrigin);
+                  publishWidget(storageKey, sanitizedKey, sanitizedLines, placement, factoryOrigin);
                   replacingPublishedWidget = false;
                   requestWidgetAttention(
                     sanitizedKey,
@@ -816,7 +832,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
                 if (lastSnapshot !== undefined || replacingPublishedWidget) {
                   lastSnapshot = undefined;
                   replacingPublishedWidget = false;
-                  publishWidget(sanitizedKey, null, placement, factoryOrigin);
+                  publishWidget(storageKey, sanitizedKey, null, placement, factoryOrigin);
                 }
                 if (sanitizedMessage !== lastRenderError) {
                   lastRenderError = sanitizedMessage;
@@ -831,17 +847,17 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
             invalidate: () => widgetComponent?.invalidate(),
           };
           const activeFactory = { dispose };
-          activeWidgetFactories.set(sanitizedKey, activeFactory);
+          activeWidgetFactories.set(storageKey, activeFactory);
           widgetTui.addChild(renderBridge);
           widgetTui.start();
         } catch (err) {
-          if (activeWidgetFactories.get(sanitizedKey)?.dispose === dispose) {
-            activeWidgetFactories.delete(sanitizedKey);
+          if (activeWidgetFactories.get(storageKey)?.dispose === dispose) {
+            activeWidgetFactories.delete(storageKey);
           }
           dispose();
-          if (publishedWidgetKeys.has(sanitizedKey)) {
+          if (publishedWidgetKeys.has(storageKey)) {
             replacingPublishedWidget = false;
-            publishWidget(sanitizedKey, null, placement, factoryOrigin);
+            publishWidget(storageKey, sanitizedKey, null, placement, factoryOrigin);
           }
           const message = err instanceof Error ? err.message : String(err);
           opts.emit("package.diagnostic", {
@@ -852,7 +868,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         return;
       }
       const widget = content === undefined ? null : sanitize(content);
-      publishWidget(sanitizedKey, widget, placement, capturedOrigin);
+      publishWidget(storageKey, sanitizedKey, widget, placement, capturedOrigin);
       if (widget !== null && widget !== undefined) {
         requestWidgetAttention(sanitizedKey, commandOrigin);
       }
@@ -878,8 +894,16 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         await opts.waitUntilActive();
       }
       if (opts.isDisposed?.()) return undefined as T;
-      const requestId = randomUUID();
       const id = identityAt();
+      const ownerSessionState = resolveExtensionUiOwnerSessionState(
+        id,
+        opts.getCurrentIdentity?.() ?? id,
+        true,
+      );
+      // A custom terminal is a single focused surface. Unlike decision
+      // dialogs it cannot be queued safely for a background Session.
+      if (ownerSessionState !== "active") return undefined as T;
+      const requestId = randomUUID();
       const owner = ownerFromIdentity(id);
       return await new Promise<T>((resolveOuter, rejectOuter) => {
         let frameBuffer = "";
@@ -975,7 +999,14 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
         }
         Promise.resolve(factoryResult)
           .then((c) => {
-            if (closed) return;
+            if (closed) {
+              try {
+                c.dispose?.();
+              } catch {
+                /* ignore disposal errors after the request already closed */
+              }
+              return;
+            }
             component = c;
             if (options?.overlay) {
               const resolveOptions = (): OverlayOptions | undefined => {
@@ -1113,10 +1144,15 @@ export async function bindExtensionUi(
   };
   const queueEvent = (event: HostEventName, payload: unknown) => {
     if (event === "extensionUi.widgetChanged") {
-      const key = (payload as { key?: unknown }).key;
+      const widget = payload as { key?: unknown; origin?: unknown };
+      const key = liveStateIdentity(String(widget.key ?? ""), widget.origin);
       for (let i = queuedEvents.length - 1; i >= 0; i -= 1) {
         const queued = queuedEvents[i];
-        if (queued?.event === event && (queued.payload as { key?: unknown }).key === key) {
+        const queuedWidget = queued?.payload as { key?: unknown; origin?: unknown } | undefined;
+        if (
+          queued?.event === event &&
+          liveStateIdentity(String(queuedWidget?.key ?? ""), queuedWidget?.origin) === key
+        ) {
           queuedEvents.splice(i, 1);
           break;
         }
@@ -1126,8 +1162,8 @@ export async function bindExtensionUi(
   };
   const updateReplayableState = (event: HostEventName, payload: unknown) => {
     if (event === "extensionUi.widgetChanged") {
-      const widget = payload as { key?: unknown; widget?: unknown };
-      const stateKey = `widget:${String(widget.key ?? "")}`;
+      const widget = payload as { key?: unknown; widget?: unknown; origin?: unknown };
+      const stateKey = `widget:${liveStateIdentity(String(widget.key ?? ""), widget.origin)}`;
       if (widget.widget === null || widget.widget === undefined) {
         replayableState.delete(stateKey);
       } else {
@@ -1136,8 +1172,8 @@ export async function bindExtensionUi(
       return;
     }
     if (event === "extensionUi.statusChanged") {
-      const status = payload as { key?: unknown; text?: unknown };
-      const stateKey = `status:${String(status.key ?? "")}`;
+      const status = payload as { key?: unknown; text?: unknown; origin?: unknown };
+      const stateKey = `status:${liveStateIdentity(String(status.key ?? ""), status.origin)}`;
       if (status.text === null || status.text === undefined || status.text === "") {
         replayableState.delete(stateKey);
       } else {
@@ -1313,6 +1349,19 @@ export function cancelPendingForIdentity(
       status: "resolved",
       value: undefined,
       closeReason: reason,
+    });
+  }
+}
+
+/** Cancel only the focused custom terminal owned by a Session being demoted. */
+export function cancelCustomForIdentity(identity: HostIdentity): void {
+  const owner = ownerFromIdentity(identity);
+  for (const [requestId, request] of pending) {
+    if (request.kind !== "custom" || !ownerMatches(request.owner, owner)) continue;
+    settlePending(requestId, {
+      status: "resolved",
+      value: undefined,
+      closeReason: "stale",
     });
   }
 }

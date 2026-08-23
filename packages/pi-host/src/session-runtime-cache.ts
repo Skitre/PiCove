@@ -9,6 +9,7 @@ import {
   type SessionSnapshot,
 } from "@pideck/protocol";
 import { clearSlots } from "./extension-ui-lifecycle.js";
+import { cancelCustomForIdentity } from "./extension-ui-bridge.js";
 import { normalizeAgentEvent } from "./event-normalize.js";
 import { AgentOperationLock } from "./locks.js";
 import { logger } from "./logger.js";
@@ -433,6 +434,14 @@ export class SessionRuntimeCache {
       !this.isSessionBusy(previous.agentSession)
     ) {
       return null;
+    }
+    const server = this.context.getServer();
+    if (server) {
+      cancelCustomForIdentity({
+        ...server.getIdentity(),
+        sessionId: previous.sessionId,
+        sessionRevision: previous.sessionRevision,
+      });
     }
     const runtime: BackgroundSessionRuntime = {
       sessionId: previous.sessionId,

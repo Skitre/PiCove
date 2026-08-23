@@ -31,7 +31,7 @@ import { createSessionHandlers } from "./session-controller.js";
 import { createAgentHandlers } from "./agent-controller.js";
 import { createPackageHandlers } from "./package-controller.js";
 import { createProviderHandlers } from "./provider-controller.js";
-import { createExtensionUiHandlers } from "./extension-ui-bridge.js";
+import { cancelAllPending, createExtensionUiHandlers } from "./extension-ui-bridge.js";
 import { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { applyKnownThinkingProfiles } from "./model-thinking.js";
 import { FileCredentialStore } from "./credential-store.js";
@@ -290,10 +290,16 @@ async function main(): Promise<void> {
         packages: graph?.packageSnapshot ?? null,
       };
     },
+    afterRehydrateBarrier: () => {
+      // Desktop replaces all Extension UI projections from the atomic
+      // snapshot. Pending interactions are not snapshot data, so release
+      // their Host-owned promises and then replay durable, non-blocking UI.
+      cancelAllPending("Host rehydrate");
+      graphFactory.getGraph()?.extensionUiReplayState?.();
+    },
     onShutdown: async () => {
       workspaceFiles.dispose();
       gitService.dispose();
-      const { cancelAllPending } = await import("./extension-ui-bridge.js");
       cancelAllPending("Host shutdown");
       const g = graphFactory.getGraph();
       if (g) {

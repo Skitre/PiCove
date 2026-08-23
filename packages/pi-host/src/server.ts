@@ -64,6 +64,11 @@ export type HostRuntimeDeps = {
   /** Method handlers registered by controllers */
   handlers: Partial<Record<HostMethod, MethodHandler>>;
   getRehydrateState?: () => Pick<RehydrateSnapshot, "workspace" | "session" | "tools" | "packages">;
+  /**
+   * Runs only after the atomic recovery response has entered the outbound
+   * queue. Events emitted here are sequenced after its watermark.
+   */
+  afterRehydrateBarrier?: () => void;
   /** Optional graceful cleanup before process exit */
   onShutdown?: () => Promise<void>;
 };
@@ -513,6 +518,13 @@ export class PiHostServer {
           }
           return createSuccessResponse(identity, id, method, result);
         });
+        try {
+          this.deps.afterRehydrateBarrier?.();
+        } catch (error) {
+          logger.error("Extension UI recovery reconciliation failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       } finally {
         this.serviceGraphLock.release(id);
       }
