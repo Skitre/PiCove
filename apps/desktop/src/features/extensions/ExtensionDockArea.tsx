@@ -37,6 +37,7 @@ import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-s
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
+import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
 import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
 
 function slotLabel(item: DockedPresentationSlot, translate: ReturnType<typeof useT>): string {
@@ -286,6 +287,15 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                       }}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => dropSlot(event, nextDockHome(group.id, group.items))}
+                      onContextMenu={(event) =>
+                        openExtensionSlotContextMenu({
+                          family: item.family,
+                          extensionId: item.extensionId,
+                          currentHome: item.mount.home,
+                          event,
+                          t,
+                        })
+                      }
                     >
                       {label}
                     </button>

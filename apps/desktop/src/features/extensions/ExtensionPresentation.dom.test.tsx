@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_EXTENSION_UI_SETTINGS } from "@pideck/protocol";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ChatPage } from "../chat/ChatPage";
+import { MenuHost } from "../../components/Menu";
 import {
   clearExtensionUiUndo,
   commitExtensionPresentationHome,
@@ -567,6 +568,76 @@ describe("Extension presentation mounts", () => {
       "false",
     ]);
     expect(dialog.querySelector("pre")).toBeNull();
+  });
+
+  it("offers legal destinations on anchor slot chrome, persists the move, and undoes it", async () => {
+    mountWidget({ placement: "aboveEditor" });
+    render(
+      <>
+        <ChatPage />
+        <MenuHost />
+      </>,
+    );
+
+    fireEvent.contextMenu(document.querySelector("[data-extension-slot='pi-subagents:widget']")!);
+    expect(screen.queryByRole("menuitem", { name: "Above composer" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Follow Extension" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Below composer" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Extensions Dock · primary" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Extensions Dock · secondary" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Floating panel" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Hidden" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Extensions Dock · primary" }));
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toMatchObject({ kind: "dock", group: "primary" }),
+    );
+    expect(screen.getByText(/Applies to all sessions/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toBeUndefined(),
+    );
+  });
+
+  it("moves a widget float to hidden from the title-bar context menu", async () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    render(
+      <>
+        <ChatPage />
+        <MenuHost />
+      </>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "pi-subagents Widget" });
+    fireEvent.contextMenu(dialog.querySelector(".cursor-grab")!);
+    expect(screen.queryByRole("menuitem", { name: "Floating panel" })).toBeNull();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Hidden" }));
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toEqual({ kind: "hidden" }),
+    );
   });
 
   it("dismisses the undo toast without reversing the change", async () => {

@@ -46,6 +46,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { notifyDesktopSettingsSaveFailure } from "../../lib/desktop-settings";
 import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
+import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
 import { statusChipText } from "../../lib/extension-ui-status-text";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
 
@@ -146,7 +147,19 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
       aria-label={label}
     >
       {mounts.map(({ slot: presentation, mount }) => (
-        <div key={`${presentation.slotId}:${slot}`} data-extension-slot={presentation.slotId}>
+        <div
+          key={`${presentation.slotId}:${slot}`}
+          data-extension-slot={presentation.slotId}
+          onContextMenu={(event) =>
+            openExtensionSlotContextMenu({
+              family: presentation.family,
+              extensionId: presentation.extensionId,
+              currentHome: mount.home,
+              event,
+              t,
+            })
+          }
+        >
           <SlotBody mount={mount} family={presentation.family} />
         </div>
       ))}
@@ -582,6 +595,15 @@ function ExtensionFloatShell({
       <div
         className="flex h-8 shrink-0 cursor-grab items-center gap-2 border-b border-border px-2"
         onPointerDown={(event) => onPointerDown(event, "move")}
+        onContextMenu={(event) =>
+          openExtensionSlotContextMenu({
+            family: slot.family,
+            extensionId: slot.extensionId,
+            currentHome: mount.home,
+            event,
+            t,
+          })
+        }
       >
         <span className="min-w-0 flex-1 truncate text-xs text-muted">{label}</span>
         <button

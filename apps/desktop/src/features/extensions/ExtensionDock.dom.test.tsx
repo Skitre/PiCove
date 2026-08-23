@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
 import { resetExtensionDeckV1GateForTests } from "../../lib/extension-deck-gate";
 import { RightDock } from "../../components/RightDock";
+import { MenuHost } from "../../components/Menu";
 
 const trusted = {
   invocationKind: "command" as const,
@@ -563,6 +564,44 @@ describe("RightDock extension-deck-v1", () => {
     const value = area.querySelector("dd");
     expect(value?.textContent).toBe("multi\nline status");
     expect(value).toHaveClass("whitespace-pre-wrap");
+  });
+
+  it("offers only legal destinations from a status tab context menu", () => {
+    resetExtensionDeckV1GateForTests(true);
+    act(() => {
+      useAppStore.getState().setDesktopSettings({
+        theme: "system",
+        language: "en",
+        restoreLastSession: true,
+        autoRestartHostOnce: true,
+        extensionDecisionPresentation: "auto",
+        terminalProfile: "auto",
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: {
+            "pi-subagents": {
+              status: { home: { kind: "dock", group: "primary", order: 0 } },
+            },
+          },
+        },
+      });
+    });
+    useAppStore.getState().setExtensionStatus("fleet", "running", trusted);
+    render(
+      <>
+        <RightDock />
+        <MenuHost />
+      </>,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "pi-subagents Status" }));
+    expect(screen.getByRole("menuitem", { name: "Above composer" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Extensions Dock · secondary" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Extensions Dock · primary" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Hidden" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Floating panel" })).toBeNull();
   });
 
   it("closes custom content without deleting the global profile", () => {
