@@ -8,7 +8,7 @@ import {
 
 describe("isExtensionUiTransportLine", () => {
   it("matches only PI_SUBAGENT transport lines", () => {
-    expect(isExtensionUiTransportLine("PI_SUBAGENT_abc_JSON: {\"a\":1}")).toBe(true);
+    expect(isExtensionUiTransportLine('PI_SUBAGENT_abc_JSON: {"a":1}')).toBe(true);
     expect(isExtensionUiTransportLine("PI_SUBAGENT_agent-1_JSON: [1]")).toBe(true);
     expect(isExtensionUiTransportLine("PI_SUBAGENT_JSON: plain")).toBe(false);
     expect(isExtensionUiTransportLine("fleet: 2 running")).toBe(false);
@@ -26,9 +26,9 @@ describe("filterExtensionUiTransportLines", () => {
   });
 
   it("treats fully-transport text as empty", () => {
-    expect(filterExtensionUiTransportLines("PI_SUBAGENT_abc_JSON: 1\nPI_SUBAGENT_def_JSON: 2")).toBe(
-      "",
-    );
+    expect(
+      filterExtensionUiTransportLines("PI_SUBAGENT_abc_JSON: 1\nPI_SUBAGENT_def_JSON: 2"),
+    ).toBe("");
     expect(filterExtensionUiTransportLines("PI_SUBAGENT_abc_JSON: 1")).toBe("");
   });
 });
