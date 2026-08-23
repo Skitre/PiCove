@@ -795,3 +795,25 @@
 - Verification: focused suites green; full `pnpm verify:quick` green
   (Desktop 139 files / 935 tests, Pi Host 82 / 761, Protocol 6 / 534).
 - Next phase: C (first-observation discoverability notification).
+
+## Session: 2026-08-23 UI polish C
+
+- **Status:** complete (Phase C: first-observation discoverability hint; final phase)
+- `observeExtensionUiHostEvent` now pushes one notification through the existing
+  `pushNotification(message, "info")` stack when an Extension is observed for
+  the first time: only when the extensionId had no observedCapabilities entry
+  before the event (first family), guarded by an in-memory set that coalesces
+  concurrent first observations; replays and later families stay quiet, and
+  Extensions restored from persisted capabilities never hint.
+- No action button: `pushNotification` takes message+level only (no action
+  support), so the hint is plain text per the plan; no new toast infra.
+- No new persisted fields: the one-shot semantic rides on observedCapabilities;
+  the hint set is cleared by `forgetObservedExtensionDisplayName` (the "Forget
+  UI settings" flow), so forgetting re-enables one more hint afterwards.
+- New i18n key `extensionUiPlacementHint` (en/zh).
+- Tests: first observation notifies once; replay + second family quiet;
+  concurrent burst coalesces to one; persisted-entry Extensions never hint.
+- Verification: focused suite green (7 tests); full `pnpm verify:quick` green
+  (Desktop 139 files / 938 tests, Pi Host 82 / 761, Protocol 6 / 534).
+- All four phases (quickfix, A, B, C) of the Extension Deck UI polish plan are
+  now complete.
