@@ -640,6 +640,112 @@ describe("Extension presentation mounts", () => {
     );
   });
 
+  it("moves an anchored widget into the Dock through the drag handle and overlay", async () => {
+    mountWidget({ placement: "aboveEditor" });
+    render(<ChatPage />);
+
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
+    const handle = document.querySelector("[data-extension-drag-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 7, clientX: 200, clientY: 300 });
+
+    const overlay = document.querySelector("[data-extension-drop-overlay]")!;
+    expect(overlay.querySelectorAll("[data-extension-drop]")).toHaveLength(4);
+    const zone = overlay.querySelector("[data-extension-drop='dock-primary']")!;
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => zone,
+    });
+    fireEvent.pointerUp(document, { pointerId: 7, clientX: 500, clientY: 500 });
+
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toMatchObject({ kind: "dock", group: "primary" }),
+    );
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
+  });
+
+  it("floats an anchored widget at the pointer with a clamped default rect on empty drops", async () => {
+    mountWidget({ placement: "aboveEditor" });
+    render(<ChatPage />);
+
+    const handle = document.querySelector("[data-extension-drag-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 200, clientY: 300 });
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => null,
+    });
+    fireEvent.pointerUp(document, { pointerId: 8, clientX: 10, clientY: 5 });
+
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home?.kind,
+      ).toBe("float"),
+    );
+    expect(
+      useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+        ?.home,
+    ).toMatchObject({ rect: { x: 8 / 1200, y: 8 / 800, width: 360, height: 240 } });
+  });
+
+  it("cancels an anchor drag with Escape and writes nothing", () => {
+    mountWidget({ placement: "aboveEditor" });
+    render(<ChatPage />);
+
+    const handle = document.querySelector("[data-extension-drag-handle]")!;
+    fireEvent.pointerDown(handle, { pointerId: 9, clientX: 200, clientY: 300 });
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
+    expect(
+      useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"],
+    ).toBeUndefined();
+  });
+
+  it("shows overlay targets while dragging a float and releases them on drop", async () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    render(<ChatPage />);
+
+    const dialog = screen.getByRole("dialog", { name: "pi-subagents Widget" });
+    fireEvent.pointerDown(dialog.querySelector(".cursor-grab")!, {
+      pointerId: 10,
+      clientX: 300,
+      clientY: 200,
+    });
+    const overlay = document.querySelector("[data-extension-drop-overlay]")!;
+    expect(overlay.querySelectorAll("[data-extension-drop]")).toHaveLength(4);
+
+    const zone = overlay.querySelector("[data-extension-drop='dock-secondary']")!;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => zone,
+    });
+    fireEvent.pointerUp(dialog, { pointerId: 10, clientX: 400, clientY: 250 });
+
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
+          ?.home,
+      ).toMatchObject({ kind: "dock", group: "secondary" }),
+    );
+    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
+  });
+
   it("dismisses the undo toast without reversing the change", async () => {
     await commitExtensionPresentationHome({
       extensionId: "pi-subagents",

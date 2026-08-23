@@ -197,6 +197,7 @@ export const en = {
   extensionUiHomeHidden: "Hidden",
   extensionUiHomeInline: "Chat inline",
   extensionUiHomeModal: "Modal",
+  extensionUiDragHandle: "Drag to move",
   extensionUiHighRiskLocked: "High-risk requests stay modal — Host policy cannot be changed.",
   extensionUiReset: "Reset Extension UI defaults",
   extensionUiForget: "Forget UI settings",

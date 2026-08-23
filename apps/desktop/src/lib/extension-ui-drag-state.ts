@@ -5,6 +5,8 @@ import type { ExtensionSurfaceFamily } from "@pideck/protocol";
 export type ActiveExtensionUiDrag = {
   slotId: string;
   family: Exclude<ExtensionSurfaceFamily, "blockingDialog">;
+  /** Pointer drags also show the labeled drop-overlay targets; HTML5 dock drags do not. */
+  withOverlay?: boolean;
 };
 
 let active: ActiveExtensionUiDrag | null = null;
@@ -15,7 +17,13 @@ function emit(): void {
 }
 
 export function beginExtensionUiDrag(drag: ActiveExtensionUiDrag): void {
-  if (active?.slotId === drag.slotId && active.family === drag.family) return;
+  if (
+    active?.slotId === drag.slotId &&
+    active.family === drag.family &&
+    active.withOverlay === drag.withOverlay
+  ) {
+    return;
+  }
   active = drag;
   emit();
 }
@@ -35,6 +43,10 @@ export function subscribeExtensionUiDrag(listener: () => void): () => void {
   return () => {
     listeners.delete(listener);
   };
+}
+
+export function useActiveExtensionUiDrag(): ActiveExtensionUiDrag | null {
+  return useSyncExternalStore(subscribeExtensionUiDrag, getActiveExtensionUiDrag, () => null);
 }
 
 /** Legal `data-extension-drop` targets for the dragged family. */

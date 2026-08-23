@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { LoaderCircle, Pin, X } from "lucide-react";
+import { GripVertical, LoaderCircle, Pin, X } from "lucide-react";
 import type { PresentationHome } from "@pideck/protocol";
 import { observedExtensionDisplayName } from "../../lib/extension-ui-observation";
 import {
@@ -18,6 +18,7 @@ import {
   type FloatResizeEdge,
   type PixelRect,
 } from "../../lib/extension-ui-float-geometry";
+import { homeFromDropTarget } from "../../lib/extension-ui-drop-target";
 import {
   extensionUiFamilyMessageKey,
   extensionUiHomeMessageKey,
@@ -26,8 +27,15 @@ import { isExtensionDeckV1Enabled } from "../../lib/extension-deck-gate";
 import {
   beginExtensionUiDrag,
   endExtensionUiDrag,
+  isLegalExtensionDropTarget,
+  useActiveExtensionUiDrag,
   useExtensionDropHighlight,
 } from "../../lib/extension-ui-drag-state";
+import {
+  isLegalPresentationChoice,
+  presentationChoiceFromHome,
+  presentationHomeFromChoice,
+} from "../../lib/extension-ui-presentation";
 import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
 import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
 import {
@@ -44,7 +52,11 @@ import {
 } from "../../lib/extension-ui-slots";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
-import { notifyDesktopSettingsSaveFailure } from "../../lib/desktop-settings";
+import {
+  canonicalExtensionUiSettings,
+  notifyDesktopSettingsSaveFailure,
+} from "../../lib/desktop-settings";
+import type { MessageKey } from "../../lib/i18n";
 import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
 import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
 import { statusChipText } from "../../lib/extension-ui-status-text";
@@ -147,22 +159,181 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
       aria-label={label}
     >
       {mounts.map(({ slot: presentation, mount }) => (
-        <div
-          key={`${presentation.slotId}:${slot}`}
-          data-extension-slot={presentation.slotId}
-          onContextMenu={(event) =>
-            openExtensionSlotContextMenu({
-              family: presentation.family,
-              extensionId: presentation.extensionId,
-              currentHome: mount.home,
-              event,
-              t,
-            })
-          }
-        >
-          <SlotBody mount={mount} family={presentation.family} />
-        </div>
+        <AnchorSlotRow key={`${presentation.slotId}:${slot}`} slot={presentation} mount={mount} />
       ))}
+    </div>
+  );
+}
+
+const DROP_ZONE_LABELS: Record<
+  "dock-primary" | "dock-secondary" | "aboveComposer" | "belowComposer",
+  MessageKey
+> = {
+  "dock-primary": "extensionUiHomeDockPrimary",
+  "dock-secondary": "extensionUiHomeDockSecondary",
+  aboveComposer: "extensionUiHomeAboveComposer",
+  belowComposer: "extensionUiHomeBelowComposer",
+};
+
+const DROP_ZONE_ORDER: Array<keyof typeof DROP_ZONE_LABELS> = [
+  "dock-primary",
+  "dock-secondary",
+  "aboveComposer",
+  "belowComposer",
+];
+
+/**
+ * Labeled fixed-position drop targets shown during pointer drags. The RightDock
+ * may be collapsed or on another tab, so the drag cannot rely on real targets
+ * being visible; zones stay hittable while the overlay itself lets pointer
+ * events pass through to whatever is underneath.
+ */
+function ExtensionDropOverlay() {
+  const t = useT();
+  const drag = useActiveExtensionUiDrag();
+  if (!drag?.withOverlay) return null;
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-40 flex items-end justify-center p-4"
+      data-extension-drop-overlay
+    >
+      <div className="flex flex-wrap justify-center gap-2 rounded-lg border border-border bg-surface-raised p-2 shadow-xl">
+        {DROP_ZONE_ORDER.filter((zone) => isLegalExtensionDropTarget(drag, zone)).map((zone) => (
+          <div
+            key={zone}
+            data-extension-drop={zone}
+            aria-label={t(DROP_ZONE_LABELS[zone])}
+            title={t(DROP_ZONE_LABELS[zone])}
+            className="pointer-events-auto flex min-w-28 items-center justify-center rounded-md border border-accent/40 bg-surface-raised px-3 py-3 text-xs text-muted"
+          >
+            {t(DROP_ZONE_LABELS[zone])}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnchorSlotRow({
+  slot,
+  mount,
+}: {
+  slot: ExtensionPresentationSlot;
+  mount: PresentationSlotMount;
+}) {
+  const t = useT();
+  const dragSession = useRef<{ pointerId: number } | null>(null);
+  const cleanupDrag = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cleanupDrag.current?.();
+      cleanupDrag.current = null;
+      dragSession.current = null;
+      endExtensionUiDrag();
+    };
+  }, []);
+
+  const commitHome = (home: PresentationHome) => {
+    if (!slot.extensionId) return;
+    const name = observedExtensionDisplayName(slot.extensionId);
+    void commitExtensionPresentationHome({
+      extensionId: slot.extensionId,
+      family: slot.family,
+      home,
+      message: t(extensionUiHomeMessageKey(home), {
+        name,
+        family: t(extensionUiFamilyMessageKey(slot.family)),
+      }),
+    }).catch(notifyDesktopSettingsSaveFailure);
+  };
+
+  const finishDrag = (clientX: number, clientY: number) => {
+    cleanupDrag.current?.();
+    cleanupDrag.current = null;
+    dragSession.current = null;
+    endExtensionUiDrag();
+    if (!slot.extensionId) return;
+    const drop = homeFromDropTarget(document.elementFromPoint?.(clientX, clientY) ?? null);
+    if (drop) {
+      const choice = presentationChoiceFromHome(slot.family, drop);
+      if (!isLegalPresentationChoice(slot.family, choice)) return;
+      if (choice === presentationChoiceFromHome(slot.family, mount.home)) return;
+      const settings = canonicalExtensionUiSettings(useAppStore.getState().desktopSettings);
+      commitHome(presentationHomeFromChoice(slot.family, choice, settings, mount.home));
+      return;
+    }
+    // A drop on empty space floats the widget at the pointer with the default size.
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const pixel = clampAndSnapFloatRect(
+      { left: clientX - 180, top: clientY - 24, width: 360, height: 240 },
+      viewport,
+      readBrowserExclusionRect(),
+    );
+    commitHome({ kind: "float", rect: pixelsToNormalizedFloatRect(pixel, viewport) });
+  };
+
+  const cancelDrag = () => {
+    cleanupDrag.current?.();
+    cleanupDrag.current = null;
+    dragSession.current = null;
+    endExtensionUiDrag();
+  };
+
+  const onHandlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragSession.current || !slot.extensionId) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragSession.current = { pointerId: event.pointerId };
+    beginExtensionUiDrag({ slotId: slot.slotId, family: slot.family, withOverlay: true });
+    const up = (native: PointerEvent) => {
+      if (dragSession.current?.pointerId !== native.pointerId) return;
+      finishDrag(native.clientX, native.clientY);
+    };
+    const cancel = (native: PointerEvent) => {
+      if (dragSession.current?.pointerId !== native.pointerId) return;
+      cancelDrag();
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cancelDrag();
+    };
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", cancel);
+    document.addEventListener("keydown", keydown);
+    cleanupDrag.current = () => {
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", cancel);
+      document.removeEventListener("keydown", keydown);
+    };
+  };
+
+  return (
+    <div
+      data-extension-slot={slot.slotId}
+      className="flex items-start gap-1"
+      onContextMenu={(event) =>
+        openExtensionSlotContextMenu({
+          family: slot.family,
+          extensionId: slot.extensionId,
+          currentHome: mount.home,
+          event,
+          t,
+        })
+      }
+    >
+      <div
+        data-extension-drag-handle
+        aria-label={t("extensionUiDragHandle")}
+        title={t("extensionUiDragHandle")}
+        className="mt-1 shrink-0 cursor-grab touch-none rounded text-muted hover:text-foreground"
+        onPointerDown={onHandlePointerDown}
+      >
+        <GripVertical aria-hidden="true" size={12} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <SlotBody mount={mount} family={slot.family} />
+      </div>
     </div>
   );
 }
@@ -240,23 +411,26 @@ export function ExtensionFloatLayer() {
         : next;
     });
   }, []);
-  if (floats.length === 0) return null;
+  if (floats.length === 0) return <ExtensionDropOverlay />;
   return (
-    <div
-      className={`${page === "chat" ? "fixed" : "hidden"} pointer-events-none inset-0 z-30`}
-      data-extension-float-layer
-    >
-      {floats.map(({ slot, mount }) => (
-        <ExtensionFloatShell
-          key={slot.slotId}
-          slot={slot}
-          mount={mount}
-          visible={page === "chat"}
-          zIndex={zIndexBySlotId.get(slot.slotId) ?? 1}
-          onRaise={() => bringToFront(slot.slotId)}
-        />
-      ))}
-    </div>
+    <>
+      <ExtensionDropOverlay />
+      <div
+        className={`${page === "chat" ? "fixed" : "hidden"} pointer-events-none inset-0 z-30`}
+        data-extension-float-layer
+      >
+        {floats.map(({ slot, mount }) => (
+          <ExtensionFloatShell
+            key={slot.slotId}
+            slot={slot}
+            mount={mount}
+            visible={page === "chat"}
+            zIndex={zIndexBySlotId.get(slot.slotId) ?? 1}
+            onRaise={() => bringToFront(slot.slotId)}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -305,17 +479,6 @@ function samePixelRect(left: PixelRect, right: PixelRect): boolean {
     left.width === right.width &&
     left.height === right.height
   );
-}
-
-function homeFromDropTarget(target: EventTarget | null): PresentationHome | null {
-  const element =
-    target instanceof Element ? target.closest<HTMLElement>("[data-extension-drop]") : null;
-  const drop = element?.dataset.extensionDrop;
-  if (drop === "dock-primary") return { kind: "dock", group: "primary", order: 0 };
-  if (drop === "dock-secondary") return { kind: "dock", group: "secondary", order: 0 };
-  if (drop === "aboveComposer") return { kind: "anchor", slot: "aboveComposer" };
-  if (drop === "belowComposer") return { kind: "anchor", slot: "belowComposer" };
-  return null;
 }
 
 function ExtensionFloatShell({
@@ -511,7 +674,9 @@ function ExtensionFloatShell({
       event.stopPropagation();
     }
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    if (mode === "move") beginExtensionUiDrag({ slotId: slot.slotId, family: slot.family });
+    if (mode === "move") {
+      beginExtensionUiDrag({ slotId: slot.slotId, family: slot.family, withOverlay: true });
+    }
     drag.current = {
       pointerId: event.pointerId,
       originX: event.clientX,

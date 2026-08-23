@@ -23,12 +23,24 @@ describe("extension drag state", () => {
     beginExtensionUiDrag({ slotId: "pi-subagents:widget", family: "widget" });
     expect(listener).toHaveBeenCalledTimes(1);
 
-    endExtensionUiDrag();
-    expect(getActiveExtensionUiDrag()).toBeNull();
+    beginExtensionUiDrag({
+      slotId: "pi-subagents:widget",
+      family: "widget",
+      withOverlay: true,
+    });
+    expect(getActiveExtensionUiDrag()).toEqual({
+      slotId: "pi-subagents:widget",
+      family: "widget",
+      withOverlay: true,
+    });
     expect(listener).toHaveBeenCalledTimes(2);
 
     endExtensionUiDrag();
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(getActiveExtensionUiDrag()).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    endExtensionUiDrag();
+    expect(listener).toHaveBeenCalledTimes(3);
     unsubscribe();
   });
 
