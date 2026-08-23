@@ -23,6 +23,11 @@ import {
   extensionUiHomeMessageKey,
 } from "../../lib/extension-ui-home-message";
 import { isExtensionDeckV1Enabled } from "../../lib/extension-deck-gate";
+import {
+  beginExtensionUiDrag,
+  endExtensionUiDrag,
+  useExtensionDropHighlight,
+} from "../../lib/extension-ui-drag-state";
 import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
 import {
   clearExtensionUiUndo,
@@ -111,6 +116,7 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
   const t = useT();
   const slots = usePresentationSlots();
   const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
+  const dropActive = useExtensionDropHighlight(slot);
   const mounts = mountsForHome(
     slots,
     (home) => home.kind === "anchor" && home.slot === slot,
@@ -125,10 +131,11 @@ export function ExtensionAnchorSlots({ slot }: { slot: "aboveComposer" | "belowC
     <div
       className={`mb-1 overflow-auto rounded-md border border-border bg-surface-raised ${
         collapsed ? "px-2 py-0" : "max-h-40 px-2.5 py-0.5"
-      }`}
+      } ${dropActive ? "ring-1 ring-accent" : ""}`}
       data-extension-anchor={slot}
       data-extension-anchor-collapsed={collapsed ? "true" : "false"}
       data-extension-drop={slot}
+      data-extension-drop-active={dropActive ? "true" : "false"}
       aria-label={label}
     >
       {mounts.map(({ slot: presentation, mount }) => (
@@ -356,6 +363,7 @@ function ExtensionFloatShell({
     const shell = shellRef.current;
     return () => {
       documentDrag.current?.();
+      endExtensionUiDrag();
       if (shell?.contains(document.activeElement)) restoreFocus.current?.focus?.();
     };
   }, []);
@@ -441,6 +449,7 @@ function ExtensionFloatShell({
     drag.current = null;
     documentDrag.current?.();
     documentDrag.current = null;
+    endExtensionUiDrag();
     const current = pixelRef.current;
     if (session.mode === "move") {
       const shell = shellRef.current;
@@ -473,6 +482,7 @@ function ExtensionFloatShell({
       event.stopPropagation();
     }
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (mode === "move") beginExtensionUiDrag({ slotId: slot.slotId, family: slot.family });
     drag.current = {
       pointerId: event.pointerId,
       originX: event.clientX,

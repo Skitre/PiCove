@@ -415,6 +415,63 @@ describe("RightDock extension-deck-v1", () => {
     ).toMatchObject({ kind: "dock", group: "secondary" });
   });
 
+  it("highlights dock drop targets during an HTML5 drag and clears it on dragend", () => {
+    resetExtensionDeckV1GateForTests(true);
+    act(() => {
+      useAppStore.getState().setDesktopSettings({
+        theme: "system",
+        language: "en",
+        restoreLastSession: true,
+        autoRestartHostOnce: true,
+        extensionDecisionPresentation: "auto",
+        terminalProfile: "auto",
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: {
+            "pi-subagents": {
+              widget: { home: { kind: "dock", group: "primary", order: 0 } },
+            },
+          },
+        },
+      });
+      useAppStore.getState().setExtensionWidget({
+        key: "fleet",
+        widget: ["ready"],
+        origin: trusted,
+        hostInstanceId: "h1",
+        workspaceId: "w1",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      });
+    });
+    render(<RightDock />);
+
+    const area = document.querySelector("[data-extension-dock-area]")!;
+    const panel = document.querySelector('[data-extension-slot="pi-subagents:widget"]')!;
+    const edge = document.querySelector("[data-extension-dock-edge='secondary']")!;
+    expect(area.getAttribute("data-extension-drop-active")).toBe("false");
+    expect(edge).toHaveClass("w-2");
+
+    fireEvent.dragStart(panel, {
+      dataTransfer: {
+        setData() {},
+        getData: () => "pi-subagents:widget",
+      },
+    });
+    expect(area.getAttribute("data-extension-drop-active")).toBe("true");
+    expect(area).toHaveClass("ring-accent");
+    expect(edge.getAttribute("data-extension-drop-active")).toBe("true");
+    expect(edge).toHaveClass("w-6");
+    expect(edge.querySelector("span")).toHaveClass("bg-accent");
+
+    fireEvent.dragEnd(panel);
+    expect(area.getAttribute("data-extension-drop-active")).toBe("false");
+    expect(edge.getAttribute("data-extension-drop-active")).toBe("false");
+    expect(edge).toHaveClass("w-2");
+    expect(edge.querySelector("span")).toBeNull();
+  });
+
   it("closes custom content without deleting the global profile", () => {
     resetExtensionDeckV1GateForTests(true);
     useAppStore.getState().setDesktopSettings({

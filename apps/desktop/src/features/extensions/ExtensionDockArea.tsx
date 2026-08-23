@@ -19,6 +19,11 @@ import {
   type DockedPresentationSlot,
 } from "../../lib/extension-ui-dock-layout";
 import {
+  beginExtensionUiDrag,
+  endExtensionUiDrag,
+  useExtensionDropHighlight,
+} from "../../lib/extension-ui-drag-state";
+import {
   extensionUiFamilyMessageKey,
   extensionUiHomeMessageKey,
 } from "../../lib/extension-ui-home-message";
@@ -89,6 +94,8 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
   const dockedCustomRequestId = dockedCustom?.mount.custom?.requestId ?? null;
   const dockedCustomGroup = dockedCustom?.group;
   const dockedCustomSlotId = dockedCustom?.slotId;
+  const primaryDropActive = useExtensionDropHighlight("dock-primary");
+  const secondaryDropActive = useExtensionDropHighlight("dock-secondary");
 
   const groups = useMemo(
     () => [
@@ -112,6 +119,7 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
   const dropSlot = (event: ReactDragEvent, home: PresentationHome) => {
     event.preventDefault();
     event.stopPropagation();
+    endExtensionUiDrag();
     const slotId = event.dataTransfer.getData("application/x-pideck-extension-slot");
     const dragged = docked.find((candidate) => candidate.slotId === slotId);
     if (!dragged?.extensionId || (dragged.family !== "widget" && dragged.family !== "custom")) {
@@ -146,9 +154,12 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
 
   return (
     <div
-      className={`${visible ? "flex" : "hidden"} min-h-0 flex-1 ${direction === "column" ? "flex-col" : "flex-row"}`}
+      className={`${visible ? "flex" : "hidden"} min-h-0 flex-1 ${direction === "column" ? "flex-col" : "flex-row"} ${
+        primaryDropActive ? "rounded-md ring-1 ring-accent bg-accent/10" : ""
+      }`}
       data-extension-dock-area
       data-extension-drop="dock-primary"
+      data-extension-drop-active={primaryDropActive ? "true" : "false"}
       aria-label={t("extensionUiDockArea")}
     >
       {groups.map((group, index) => {
@@ -331,7 +342,9 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                   draggable={item.family === "widget" || item.family === "custom"}
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-pideck-extension-slot", item.slotId);
+                    beginExtensionUiDrag({ slotId: item.slotId, family: item.family });
                   }}
+                  onDragEnd={endExtensionUiDrag}
                 >
                   {item.mount.widgets?.length ? (
                     <ExtensionWidgetRows widgets={item.mount.widgets} />
@@ -352,11 +365,29 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
         <div
           data-extension-drop="dock-secondary"
           data-extension-dock-edge="secondary"
+          data-extension-drop-active={secondaryDropActive ? "true" : "false"}
           aria-label={t("extensionUiHomeDockSecondary")}
-          className={direction === "row" ? "w-2 shrink-0" : "h-2 shrink-0"}
+          className={`flex shrink-0 items-center justify-center transition-all motion-reduce:transition-none ${
+            direction === "row"
+              ? secondaryDropActive
+                ? "w-6"
+                : "w-2"
+              : secondaryDropActive
+                ? "h-6"
+                : "h-2"
+          } ${secondaryDropActive ? "rounded bg-accent/10" : ""}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => dropSlot(event, nextDockHome("secondary", []))}
-        />
+        >
+          {secondaryDropActive && (
+            <span
+              aria-hidden="true"
+              className={
+                direction === "row" ? "h-full w-1 rounded bg-accent" : "h-1 w-full rounded bg-accent"
+              }
+            />
+          )}
+        </div>
       )}
     </div>
   );

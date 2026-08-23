@@ -451,7 +451,7 @@ describe("Extension presentation mounts", () => {
     });
     const second = screen.getByRole("dialog", { name: "ext-other Widget" });
 
-    const zIndex = (element: Element) => Number(element.style.zIndex);
+    const zIndex = (element: Element) => Number((element as HTMLElement).style.zIndex);
     expect(zIndex(first)).toBeGreaterThan(0);
     expect(zIndex(second)).toBeGreaterThan(zIndex(first));
 
@@ -461,6 +461,45 @@ describe("Extension presentation mounts", () => {
       useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
         ?.home,
     ).toMatchObject({ kind: "float", rect: { x: 0.1, y: 0.1 } });
+  });
+
+  it("highlights legal anchor targets while a float drag is active and clears it on release", () => {
+    useAppStore.getState().setDesktopSettings({
+      ...BASE_SETTINGS,
+      extensionUi: {
+        ...DEFAULT_EXTENSION_UI_SETTINGS,
+        presentations: {
+          "pi-subagents": {
+            widget: { home: { kind: "float", rect: { x: 0.2, y: 0.2, width: 300, height: 180 } } },
+          },
+        },
+      },
+    });
+    mountWidget();
+    useAppStore.getState().setExtensionWidget({
+      key: "other",
+      widget: ["other-ready"],
+      placement: "aboveEditor",
+      origin: { ...trusted, extensionId: "ext-other", extensionDisplayName: "Other" },
+      hostInstanceId: "h1",
+      workspaceId: "w",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+    });
+    render(<ChatPage />);
+
+    const anchor = document.querySelector("[data-extension-anchor='aboveComposer']")!;
+    expect(anchor.getAttribute("data-extension-drop-active")).toBe("false");
+
+    const dialog = screen.getByRole("dialog", { name: "pi-subagents Widget" });
+    const title = dialog.querySelector(".cursor-grab")!;
+    fireEvent.pointerDown(title, { pointerId: 5, clientX: 300, clientY: 200 });
+    expect(anchor.getAttribute("data-extension-drop-active")).toBe("true");
+    expect(anchor).toHaveClass("ring-accent");
+
+    fireEvent.pointerUp(dialog, { pointerId: 5, clientX: 300, clientY: 200 });
+    expect(anchor.getAttribute("data-extension-drop-active")).toBe("false");
   });
 
   it("dismisses the undo toast without reversing the change", async () => {
@@ -553,7 +592,9 @@ describe("Extension presentation mounts", () => {
       useAppStore.getState().setPage("settings");
     });
     expect(document.querySelector("[data-extension-float-layer]")).toHaveClass("hidden");
-    expect(screen.getByRole("dialog", { name: "pi-subagents Widget", hidden: true })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "pi-subagents Widget", hidden: true }),
+    ).toBeInTheDocument();
   });
 
   it("releases custom Float focus when hidden and never focuses it behind Settings", async () => {
