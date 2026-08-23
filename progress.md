@@ -762,3 +762,36 @@
 - Verification: focused suites green; full `pnpm verify:quick` green
   (Desktop 138 files / 927 tests, Pi Host 82 / 761, Protocol 6 / 534).
 - Next phase: B (movement interactions: B0 slot context menu, B1 anchor drag-out).
+
+## Session: 2026-08-23 UI polish B
+
+- **Status:** complete (Phase B: movement interactions)
+- B0 slot context menu (63eb377):
+  - `lib/extension-ui-home-message.ts` gained `extensionUiChoiceMessageKey`;
+    choice labels reuse the existing `extensionUiHome*` keys (no new copy needed
+    beyond locales already having them).
+  - New `features/extensions/extension-slot-context-menu.ts`: menu items are
+    `FAMILY_PRESENTATION_CHOICES` mapped through `presentationHomeFromChoice`,
+    current position excluded, `hidden` offered for widget only; selection
+    persists via `commitExtensionPresentationHome` (Undo toast included).
+  - Wired `onContextMenu` on the anchor slot row, Dock tab, and Float title bar.
+  - Tests: anchor menu legality + dock move + Undo restores absence; float
+    title-bar menu → hidden; status tab menu excludes Hidden/float and current.
+- B1 anchor drag-out (34bb958):
+  - `homeFromDropTarget` moved to shared `lib/extension-ui-drop-target.ts`
+    (unit-tested); anchor rows gained a grip handle starting a pointer-drag
+    session (pointer capture + document listeners + elementFromPoint).
+  - Drop overlay (`data-extension-drop-overlay`) renders labeled large targets
+    (Dock primary/secondary, above/below composer) filtered by
+    `isLegalExtensionDropTarget`; the overlay passes pointer events through so
+    real highlighted targets stay hittable; blank drops create a 360×240 float
+    at the pointer through `clampAndSnapFloatRect`; Escape/pointercancel write
+    nothing; float title drags now open the overlay too (drag-state gained a
+    `withOverlay` flag).
+  - Only new i18n key: `extensionUiDragHandle` (en/zh).
+  - Tests: handle drag → dock home persisted; empty-space drop → clamped float
+    rect (8px margin, 360×240); Escape cancel zero writes; float drag hits
+    overlay zones and clears the overlay.
+- Verification: focused suites green; full `pnpm verify:quick` green
+  (Desktop 139 files / 935 tests, Pi Host 82 / 761, Protocol 6 / 534).
+- Next phase: C (first-observation discoverability notification).
