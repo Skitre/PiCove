@@ -90,3 +90,15 @@ export const MAX_EXTENSION_UI_DETACHED_SIZE = 65_536;
 export const MIN_EXTENSION_UI_SCALE_FACTOR = 0.1;
 export const MAX_EXTENSION_UI_SCALE_FACTOR = 16;
 export const MAX_EXTENSION_UI_MONITOR_NAME_LENGTH = 256;
+
+/**
+ * Structured widget payload bounds. An Extension publishes these on every
+ * widget change, so they are re-validated constantly and must stay cheap. The
+ * numbers reject runaway or hostile payloads; they are not layout advice.
+ */
+export const MAX_STRUCTURED_WIDGET_ROWS = 32;
+export const MAX_STRUCTURED_WIDGET_FIELDS = 32;
+export const MAX_STRUCTURED_WIDGET_ACTIONS = 8;
+export const MAX_STRUCTURED_WIDGET_TEXT_LENGTH = 2_048;
+export const MAX_STRUCTURED_WIDGET_LABEL_LENGTH = 120;
+export const MAX_STRUCTURED_WIDGET_ACTION_ID_LENGTH = 120;
