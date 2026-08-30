@@ -160,6 +160,7 @@ export type HostContextMap = {
   "resource.setPreferences": SessionPackageContext;
   "extensionUi.configure": HostContext;
   "extensionUi.respond": SessionTargetContext;
+  "extensionUi.widgetAction": SessionTargetContext;
   "extensionUi.customInput": SessionTargetContext;
   "extensionUi.customResize": SessionTargetContext;
 };
@@ -303,6 +304,7 @@ export type HostRequestParams = {
     status: "resolved" | "cancelled";
     value?: JsonValue;
   };
+  "extensionUi.widgetAction": { key: string; actionId: string };
   "extensionUi.customInput": { requestId: string; data: string };
   "extensionUi.customResize": { requestId: string; cols: number; rows: number };
 };
@@ -451,6 +453,7 @@ export type HostResultMap = {
     extensionDialogPresentationOverrides?: ExtensionDialogPresentationOverrides;
   };
   "extensionUi.respond": { accepted: true };
+  "extensionUi.widgetAction": { accepted: true };
   "extensionUi.customInput": { accepted: true };
   "extensionUi.customResize": { accepted: true };
 };

@@ -262,11 +262,25 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
 }
 
 function FloatBody({ message, waiting }: { message: FloatContentMessage | null; waiting: string }) {
+  const t = useT();
   if (message?.body.kind === "widgets") {
     return (
       <ExtensionWidgetRows
         widgets={message.body.widgets}
         form={rendererFormFor("widget", "float")}
+        onAction={async (key, actionId) => {
+          try {
+            await sendFloatIntent({
+              kind: "widgetAction",
+              slotId: message.slotId,
+              key,
+              actionId,
+            });
+            return null;
+          } catch (error) {
+            return error instanceof Error ? error.message : t("extensionWidgetActionFailed");
+          }
+        }}
       />
     );
   }

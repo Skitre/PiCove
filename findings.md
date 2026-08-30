@@ -379,3 +379,60 @@ Review of commit `40e1bad` found seven implementation gaps behind the accepted d
   duplicate Escape/force flows and surface a stale-response error after another
   flow already closed the request. Their error path also mislabels Host close
   failures as desktop-settings save failures.
+# Structured widgets implementation findings (2026-08-30)
+
+- Desktop widget content converges on `ExtensionWidgetContent` /
+  `ExtensionWidgetRows`; selecting the structured form there can cover Anchor,
+  Dock, attached Float, and detached Float without coupling the payload to a
+  presentation home.
+- `extensionUi.widgetChanged.widget` is already `JsonValue`; structured
+  publication needs no new outbound event. Unknown/non-matching payloads stay
+  on the existing read-only renderer path.
+- The inbound action path should mirror `extensionUi.customInput` end to end:
+  Protocol request/result validation, Desktop session-target request, Server
+  active-session/epoch gate, then bridge-owned delivery to the trusted binding.
+- The SDK adapter currently augments `ExtensionUIContext`; this is the seam for
+  the bridge-owned per-widget action registration declaration.
+- Widget rows retain both the published key and trusted `origin`; Desktop can
+  therefore dispatch `{key, actionId}` using its existing active-panel session
+  context without adding origin to the untrusted request body.
+- Bridge widget state is already keyed by `liveStateIdentity(key, origin)` and
+  preserves the publisher origin through replacement/clear. The action handler
+  registry should use the same storage key so equal public keys from separate
+  Extensions cannot collide.
+- `createExtensionUiContext` owns cleanup and currently has a no-op
+  `onTerminalInput`; adding `onWidgetAction(key, handler)` beside it keeps the
+  registration lifecycle within the binding and makes cleanup deterministic.
+- `SessionTargetMethod` is the shared Protocol classification for respond,
+  custom input, and custom resize. Adding widgetAction there gives it the same
+  concrete session-generation context; Host `factory.checkIdentity()` then
+  rejects stale workspace/session revisions before bridge delivery.
+- Action validity cannot be inferred only in Desktop: Host must retain the
+  action ids parsed from the last live structured payload for the same
+  `extensionId + key`, then require both a live payload action id and a live
+  handler at dispatch time.
+- UI/UX rules for the structured renderer: preserve DOM/visual tab order,
+  provide visible focus rings, confirm destructive or explicitly-confirmed
+  actions, expose an async pending state, and catch/report dispatch failures.
+  Buttons must remain host-owned and use existing semantic tokens; no payload
+  style may bypass PiDeck's accessible control system.
+- PiDeck already has a shared modal `Dialog` with focus handling, Escape,
+  semantic warning/danger tones, and standard buttons. Structured action
+  confirmation should reuse it instead of `window.confirm` or an ad hoc popover.
+- Dispatch failures already have a consistent surface through
+  `useAppStore.getState().pushNotification(..., "error")`; action buttons can
+  remain locally pending/disabled while the request is in flight and report
+  transport/Host errors through that channel.
+- Detached Float windows reuse `ExtensionWidgetRows` but intentionally have no
+  Host client/session state. The renderer must accept an injected action
+  dispatcher: attached homes call Host directly with the active session
+  context; detached homes emit a `widgetAction` intent for the main-window
+  controller to validate and forward.
+- The main-window Float controller already resolves the current slot/mount for
+  each intent. It should require that the addressed mount contains the widget
+  key and a currently enabled structured action before forwarding; Host remains
+  the authoritative second validation layer.
+- Structured parsing belongs before the existing `form === strip/panel`
+  fallback branch. A successful parse renders the same host-owned rows in every
+  home; a null parse preserves the current strip summary, panel/list, ANSI
+  stripping, and object fallback behavior byte-for-byte.

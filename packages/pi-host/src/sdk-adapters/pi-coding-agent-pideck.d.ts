@@ -26,5 +26,14 @@ declare module "@earendil-works/pi-coding-agent" {
       prefill?: string,
       opts?: import("@earendil-works/pi-coding-agent").ExtensionUIDialogOptions,
     ): Promise<string | undefined>;
+
+    setWidget(
+      key: string,
+      content: import("@pideck/protocol").StructuredWidget | undefined,
+      options?: import("@earendil-works/pi-coding-agent").ExtensionWidgetOptions,
+    ): void;
+
+    /** Register the handler for actions declared by the live structured widget at `key`. */
+    onWidgetAction(key: string, handler: (actionId: string) => void | Promise<void>): () => void;
   }
 }

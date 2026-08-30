@@ -15,6 +15,7 @@ import {
   appendFrameTail,
   floatContentChanged,
   floatContentMessage,
+  isLiveFloatWidgetAction,
   type FloatChrome,
   type FloatContentMessage,
   type FloatIntent,
@@ -25,6 +26,7 @@ import {
   subscribeExtensionTerminal,
 } from "../../lib/chat/extension-terminal-bus";
 import { hostClient } from "../../lib/bridge/host-client";
+import { dispatchExtensionWidgetAction } from "../../lib/extension-widget-action";
 import { latestSessionTargetContext } from "../../lib/bridge/host-context";
 import {
   closeFloatWindow,
@@ -379,6 +381,13 @@ export function ExtensionFloatWindowController() {
           const placement = detachedPlacementFor(intent.rect, monitors.current);
           if (!placement) return;
           commitHome(slot, { ...home, detached: placement }, "extensionUiChangedHome");
+          return;
+        }
+        case "widgetAction": {
+          if (!isLiveFloatWidgetAction(mount, intent.key, intent.actionId)) return;
+          void dispatchExtensionWidgetAction(intent.key, intent.actionId).then((error) => {
+            if (error) useAppStore.getState().pushNotification(error, "error");
+          });
           return;
         }
         case "customReady": {

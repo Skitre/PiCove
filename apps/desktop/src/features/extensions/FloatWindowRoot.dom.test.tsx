@@ -133,6 +133,34 @@ describe("FloatWindowRoot placement", () => {
     ]);
   });
 
+  it("sends a structured widget action as intent instead of issuing a Host request", async () => {
+    render(<FloatWindowRoot slotId={SLOT} />);
+    await publish(
+      contentMessage({
+        body: {
+          kind: "widgets",
+          widgets: [
+            {
+              key: "fleet",
+              widget: {
+                pideck: 1,
+                rows: [{ kind: "actions", actions: [{ id: "open", label: "Open" }] }],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(transport.intents).toContainEqual({
+      kind: "widgetAction",
+      slotId: SLOT,
+      key: "fleet",
+      actionId: "open",
+    });
+  });
+
   it("withholds Hidden from a custom panel, which must stay visible until it ends", async () => {
     render(<FloatWindowRoot slotId={SLOT} />);
     await publish(contentMessage({ family: "custom", body: { kind: "custom", requestId: "r1" } }));

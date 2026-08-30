@@ -211,6 +211,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "extensionUi.configure": { extensionDecisionPresentation: "auto" },
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
+  "extensionUi.widgetAction": { key: "fleet", actionId: "retry" },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
 };
@@ -394,6 +395,8 @@ function invalidParams(method: HostMethod): unknown {
       return { extensionDecisionPresentation: "automatic" };
     case "extensionUi.respond":
       return { requestId: "r", status: "maybe" };
+    case "extensionUi.widgetAction":
+      return { key: "fleet", actionId: "" };
     case "extensionUi.customInput":
       return { requestId: EXTENSION_REQUEST_ID, data: "" };
     case "extensionUi.customResize":

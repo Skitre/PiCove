@@ -139,6 +139,7 @@ describe("METHOD_CONTEXT_SCOPE coverage", () => {
 
   it("classifies Extension UI interactions as target-Session methods", () => {
     expect(METHOD_CONTEXT_SCOPE["extensionUi.respond"]).toBe("sessionTarget");
+    expect(METHOD_CONTEXT_SCOPE["extensionUi.widgetAction"]).toBe("sessionTarget");
     expect(METHOD_CONTEXT_SCOPE["extensionUi.customInput"]).toBe("sessionTarget");
     expect(METHOD_CONTEXT_SCOPE["extensionUi.customResize"]).toBe("sessionTarget");
   });

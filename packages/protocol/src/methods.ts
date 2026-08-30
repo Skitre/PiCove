@@ -92,6 +92,7 @@ export const HOST_METHODS = [
   "resource.setPreferences",
   "extensionUi.configure",
   "extensionUi.respond",
+  "extensionUi.widgetAction",
   "extensionUi.customInput",
   "extensionUi.customResize",
 ] as const;
@@ -222,7 +223,10 @@ export type ActiveSessionMethod =
   | "model.setCurrent"
   | "model.setThinkingLevel";
 export type SessionTargetMethod =
-  "extensionUi.respond" | "extensionUi.customInput" | "extensionUi.customResize";
+  | "extensionUi.respond"
+  | "extensionUi.widgetAction"
+  | "extensionUi.customInput"
+  | "extensionUi.customResize";
 export type ToolMutationMethod = "agent.setActiveTools";
 export type SessionPackageMethod =
   | "package.install"
@@ -358,6 +362,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "resource.setPreferences": "sessionPackage",
   "extensionUi.configure": "host",
   "extensionUi.respond": "sessionTarget",
+  "extensionUi.widgetAction": "sessionTarget",
   "extensionUi.customInput": "sessionTarget",
   "extensionUi.customResize": "sessionTarget",
 };

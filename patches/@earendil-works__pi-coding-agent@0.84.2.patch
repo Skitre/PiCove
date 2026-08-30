@@ -252,7 +252,7 @@ index 418865ad891951e3fb7e2a65f4dca4d7d87e3895..860290bc1b6996f4507579b74a064aeb
                          return result;
                      if (result?.action === "transform") {
 diff --git a/dist/core/extensions/types.d.ts b/dist/core/extensions/types.d.ts
-index 556623bc660d9ede782f6f7eaac7d93e7c0a6069..e2965228ec0db5869085e7190621456b95d2fd92 100644
+index 556623bc660d9ede782f6f7eaac7d93e7c0a6069..eef429d69359fb51df4cd8248ba1fd7faf846337 100644
 --- a/dist/core/extensions/types.d.ts
 +++ b/dist/core/extensions/types.d.ts
 @@ -39,6 +39,22 @@ export interface ExtensionUIDialogOptions {
@@ -278,6 +278,54 @@ index 556623bc660d9ede782f6f7eaac7d93e7c0a6069..e2965228ec0db5869085e7190621456b
  /** Placement for extension widgets. */
  export type WidgetPlacement = "aboveEditor" | "belowEditor";
  /** Options for extension widgets. */
+@@ -46,6 +62,30 @@ export interface ExtensionWidgetOptions {
+     /** Where the widget is rendered. Defaults to "aboveEditor". */
+     placement?: WidgetPlacement;
+ }
++export type PiDeckStructuredWidgetAction = {
++    id: string;
++    label: string;
++    style?: "default" | "primary" | "danger";
++    confirm?: string;
++    disabled?: boolean;
++};
++export type PiDeckStructuredWidgetRow = {
++    kind: "text";
++    text: string;
++    tone?: "default" | "muted" | "warning" | "danger";
++} | {
++    kind: "fields";
++    fields: Array<{ label: string; value: string }>;
++} | {
++    kind: "progress";
++    value: number;
++    max: number;
++    label?: string;
++} | {
++    kind: "actions";
++    actions: PiDeckStructuredWidgetAction[];
++};
++export type PiDeckStructuredWidget = { pideck: 1; rows: PiDeckStructuredWidgetRow[] };
+ /** Raw terminal input listener for extensions. */
+ export type TerminalInputHandler = (data: string) => {
+     consume?: boolean;
+@@ -76,6 +116,8 @@ export interface ExtensionUIContext {
+     notify(message: string, type?: "info" | "warning" | "error"): void;
+     /** Listen to raw terminal input (interactive mode only). Returns an unsubscribe function. */
+     onTerminalInput(handler: TerminalInputHandler): () => void;
++    /** Register the handler for actions declared by the live structured widget at key. */
++    onWidgetAction(key: string, handler: (actionId: string) => void | Promise<void>): () => void;
+     /** Set status text in the footer/status bar. Pass undefined to clear. */
+     setStatus(key: string, text: string | undefined): void;
+     /** Set the working/loading message shown during streaming. Call with no argument to restore default. */
+@@ -94,6 +136,7 @@ export interface ExtensionUIContext {
+     /** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
+     setHiddenThinkingLabel(label?: string): void;
+     /** Set a widget to display above or below the editor. Accepts string array or component factory. */
++    setWidget(key: string, content: PiDeckStructuredWidget | undefined, options?: ExtensionWidgetOptions): void;
+     setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
+     setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & {
+         dispose?(): void;
 diff --git a/dist/core/extensions/wrapper.js b/dist/core/extensions/wrapper.js
 index 1e9f7134dbd02635f83e65295915fa6d8c8e8676..77d603976740a37139982aadfc071ba7d819b8db 100644
 --- a/dist/core/extensions/wrapper.js

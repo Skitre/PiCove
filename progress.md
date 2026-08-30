@@ -817,3 +817,89 @@
   (Desktop 139 files / 938 tests, Pi Host 82 / 761, Protocol 6 / 534).
 - All four phases (quickfix, A, B, C) of the Extension Deck UI polish plan are
   now complete.
+# Session: 2026-08-30 Extension Deck V2 structured widgets
+
+## Phase 7a: Structured payload contract
+
+- **Status:** complete
+- Added the versioned `StructuredWidget` payload with text, fields, progress,
+  and actions rows; exact-key validation, bounded strings/counts, control-byte
+  rejection, progress bounds, and widget-wide unique action ids.
+- Non-matching and newer-version payloads return the normal read-only fallback
+  result rather than a protocol error.
+- Exported the contract from `@pideck/protocol` and added 25 focused tests.
+- Verification: Protocol 574 tests passed; Protocol typecheck, ESLint,
+  Prettier, and `git diff --check` passed.
+- Commit: `36a6264 feat(protocol): define structured widget payloads`.
+
+## Phase 7b: Host-owned renderer and action channel
+
+- **Status:** complete
+- Discovery error: attempted to read `apps/desktop/src/lib/host-client.ts`,
+  which does not exist. Resolution: locate the actual Host client module with
+  `rg` before reading or editing it.
+- Protocol action channel complete: added the bounded, exact-key
+  `extensionUi.widgetAction` request/result and classified it as a
+  session-target method. Protocol verification passes: 577 tests, typecheck,
+  and ESLint.
+- Host focused behavior passed 62 tests on the first run. The parallel
+  typecheck found a test-only handler returning `Array.push()`'s number instead
+  of `void`; changed it to a block-bodied handler before rerunning validation.
+- SDK patch application attempt failed before changing dependencies because the
+  newly prepended unified-diff hunk had inconsistent old/new line counts.
+  Recounted all three hunk headers from their literal context before retrying.
+- The corrected patch passed a verbose dry-run for every hunk. The failed pnpm
+  attempt left its new patch-hash staging directory partially patched (early
+  hunks read as already applied while the final shell hunks remained pending),
+  so the next retry must force a clean dependency reconstruction rather than
+  reuse that partial staging directory.
+- Merging the new hunks into the existing `types.d.ts` file block still failed
+  in pnpm despite GNU patch accepting every hunk. The first official
+  `pnpm patch --edit-dir` fallback then reported `PATCH_NO_LOCKFILE` because the
+  prior failed install left `node_modules` unready; the compound shell lacked
+  fail-fast and attempted to patch an empty temp directory. No repository file
+  was changed by that failed extraction. Recovery: reinstall the known-good
+  committed patch first, then regenerate through pnpm from a clean package.
+- SDK recovery completed through the official workflow: reinstall the
+  committed patch, open the already-patched package with `pnpm patch`, add only
+  the new structured/action declarations, and `patch-commit`. Frozen install
+  now succeeds; lockfile noise was removed, leaving only 9 patch-hash changes.
+- Host/SDK focused verification passes: 64 tests, Pi Host typecheck, and ESLint.
+- Test discovery note: queried a non-existent
+  `ExtensionFloatWindowController.test.tsx`; detached-float DOM coverage lives
+  in `FloatWindowRoot.dom.test.tsx` plus channel/controller behavior embedded in
+  the existing float suites.
+- First Desktop typecheck after renderer/transport wiring passed. Prettier
+  reported style-only differences in `ExtensionWidgetContent.tsx`; resolve with
+  the repository formatter before behavioral tests.
+- A first patch insertion targeted a non-existent generic
+  `describe("FloatWindowRoot")` heading; the suite is named
+  `FloatWindowRoot placement`. No file changed in that attempt; inserted the
+  detached action-intent case beside the existing placement intent tests.
+- Desktop behavior passed all 29 focused tests on the first run. Parallel
+  typecheck found the pending-state test's deferred Promise inferred as
+  `Promise<unknown>`; added the explicit `string | null` result type.
+- Repository `verify:quick` first run stopped in release metadata: changing the
+  SDK patch and lockfile invalidated their pinned SHA-256 evidence. All 5
+  failures had that single cause. Re-pinned both hashes in
+  `scripts/release-runtime.lock.json` before rerunning the full gate.
+- Second `verify:quick` passed all release metadata checks, then knip found one
+  unnecessary export on the Host-internal action dispatcher. Removed the
+  `export`; handlers and tests already use it only through the RPC boundary.
+- Host now retains enabled action ids and handler registrations under the same
+  trusted `extensionId + widget key` identity as live widget state. Dispatch
+  rejects stale, missing, disabled, ambiguous, or unbound actions; handler
+  failures emit a package diagnostic without removing the widget.
+- Desktop now renders semantic text, field, progress, and action rows through
+  the shared widget renderer in every presentation home. Action controls use
+  the shared confirmation dialog, accessible pending state, semantic danger
+  styling, and the existing error-notification surface. Unknown or newer
+  structured payloads keep the prior read-only rendering path.
+- Detached Float windows remain thin clients: they emit a typed action intent,
+  the main window revalidates the live mount/action, and only the main window
+  sends the session-target Host request.
+- Updated the official Pi SDK patch, lockfile patch hash, and pinned release
+  evidence; `pnpm install --frozen-lockfile` succeeds.
+- Final verification: `pnpm verify:quick` exited 0. Docs 126/0, release
+  metadata 26/26, lint and all typechecks passed; Protocol 7 files / 577 tests,
+  Pi Host 82 / 770, and Desktop 147 / 1029 passed.

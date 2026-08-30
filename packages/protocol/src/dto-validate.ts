@@ -1877,6 +1877,7 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "agent.abortCompaction":
     case "agent.abortRetry":
     case "extensionUi.respond":
+    case "extensionUi.widgetAction":
       return exactAccepted() ? null : `${method} result must be { accepted: true }`;
     case "extensionUi.customInput":
       return exactAccepted() ? null : `${method} result must be { accepted: true }`;

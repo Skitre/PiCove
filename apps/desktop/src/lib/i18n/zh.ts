@@ -992,6 +992,9 @@ export const zh: Record<MessageKey, string> = {
   extWidgetLabel: "扩展组件 {key}",
   extWidgetCollapse: "收起扩展组件 {key}",
   extWidgetExpand: "展开扩展组件 {key}",
+  extensionWidgetActionConfirmTitle: "确认执行“{action}”",
+  extensionWidgetActionFailed: "扩展操作失败",
+  extensionWidgetActionUnavailable: "扩展操作已不可用",
   extWidgetsToggle: "切换扩展组件",
   extWidgetsTitle: "扩展组件：{names}",
 

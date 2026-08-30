@@ -1024,6 +1024,9 @@ export const en = {
   extWidgetLabel: "Extension widget {key}",
   extWidgetCollapse: "Collapse extension widget {key}",
   extWidgetExpand: "Expand extension widget {key}",
+  extensionWidgetActionConfirmTitle: "Confirm {action}",
+  extensionWidgetActionFailed: "Extension action failed",
+  extensionWidgetActionUnavailable: "Extension action is no longer available",
   extWidgetsToggle: "Toggle extension widgets",
   extWidgetsTitle: "Extension widgets: {names}",
 

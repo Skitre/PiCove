@@ -1,7 +1,7 @@
 import type { AppLanguage } from "./i18n";
 import type { LiveStatusContent, LiveWidgetContent } from "./extension-ui-slots";
 import type { ExtensionPresentationSlot, PresentationSlotMount } from "./extension-ui-slots";
-import type { ScreenRect } from "@pideck/protocol";
+import { parseStructuredWidget, type ScreenRect } from "@pideck/protocol";
 
 /**
  * The thin-client channel between the main window and a detached Extension
@@ -83,6 +83,7 @@ export type FloatIntent =
    * means, so a Float cannot invent a placement the family does not allow.
    */
   | { kind: "setPlacement"; slotId: string; choice: string }
+  | { kind: "widgetAction"; slotId: string; key: string; actionId: string }
   | { kind: "customInput"; slotId: string; requestId: string; data: string }
   | {
       kind: "customResize";
@@ -136,6 +137,23 @@ export function floatContentChanged(
 /** A Float may only report intent about the slot it was opened for. */
 export function isIntentForSlot(intent: FloatIntent, slotId: string): boolean {
   return intent.slotId === slotId;
+}
+
+/** A detached window may invoke only an enabled action it is currently drawing. */
+export function isLiveFloatWidgetAction(
+  mount: PresentationSlotMount,
+  key: string,
+  actionId: string,
+): boolean {
+  const widget = mount.widgets?.find((entry) => entry.key === key);
+  const structured = parseStructuredWidget(widget?.widget);
+  return (
+    structured?.rows.some(
+      (row) =>
+        row.kind === "actions" &&
+        row.actions.some((action) => action.id === actionId && action.disabled !== true),
+    ) === true
+  );
 }
 
 /** Retain the newest output only; an unread stream must not grow without bound. */

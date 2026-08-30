@@ -8,6 +8,8 @@ import {
   MAX_GIT_BRANCH_NAME_BYTES,
   MAX_GIT_HISTORY_PAGE_SIZE,
   MAX_GIT_PATH_BYTES,
+  MAX_STRUCTURED_WIDGET_ACTION_ID_LENGTH,
+  MAX_STRUCTURED_WIDGET_KEY_LENGTH,
 } from "./limits.js";
 import {
   hasExactKeys,
@@ -706,6 +708,16 @@ export function validateRequestParams<M extends HostMethod>(
         (params.value === undefined || isJsonValue(params.value))
         ? ok(params)
         : fail("invalid extensionUi.respond params", { method });
+    case "extensionUi.widgetAction":
+      return exactObject(params, ["key", "actionId"]) &&
+        isNonEmptyString(params.key) &&
+        params.key.length <= MAX_STRUCTURED_WIDGET_KEY_LENGTH &&
+        !/[\p{Cc}\p{Cf}]/u.test(params.key) &&
+        isNonEmptyString(params.actionId) &&
+        params.actionId.length <= MAX_STRUCTURED_WIDGET_ACTION_ID_LENGTH &&
+        !/[\p{Cc}\p{Cf}]/u.test(params.actionId)
+        ? ok(params)
+        : fail("invalid extensionUi.widgetAction params", { method });
     case "extensionUi.customInput":
       return exactObject(params, ["requestId", "data"]) &&
         isUuid(params.requestId) &&

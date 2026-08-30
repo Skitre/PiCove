@@ -2118,6 +2118,117 @@ describe("Extension Deck origin capture", () => {
     sourceKind: "package" as const,
   };
 
+  it("dispatches only live declared widget actions to their trusted handler", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+      getTrustedPackageOrigin: () => trustedPackageOrigin,
+    });
+    const publish = await binding.activate();
+    publish();
+    const received: string[] = [];
+    const unsubscribe = ui!.onWidgetAction("fleet", (actionId) => {
+      received.push(actionId);
+    });
+    ui!.setWidget("fleet", {
+      pideck: 1,
+      rows: [
+        {
+          kind: "actions",
+          actions: [
+            { id: "retry", label: "Retry" },
+            { id: "disabled", label: "Disabled", disabled: true },
+          ],
+        },
+      ],
+    });
+    const { handlers } = extensionUiHandlers();
+    const dispatch = (actionId: string, context = targetContext()) =>
+      handlers["extensionUi.widgetAction"]!({
+        id: `widget-action-${actionId}`,
+        context,
+        params: { key: "fleet", actionId },
+      } as never);
+
+    await expect(dispatch("retry")).resolves.toEqual({ result: { accepted: true } });
+    expect(received).toEqual(["retry"]);
+    for (const rejected of ["missing", "disabled"]) {
+      const result = await dispatch(rejected);
+      expect("error" in result && result.error.code).toBe("STALE_REVISION");
+    }
+    const wrongTarget = { ...targetContext(), expectedSessionRevision: 9 };
+    const stale = await dispatch("retry", wrongTarget);
+    expect("error" in stale && stale.error.code).toBe("STALE_REVISION");
+
+    unsubscribe();
+    const missingHandler = await dispatch("retry");
+    expect("error" in missingHandler && missingHandler.error.code).toBe("STALE_REVISION");
+
+    ui!.onWidgetAction("fleet", async () => {
+      throw new Error("handler exploded");
+    });
+    await expect(dispatch("retry")).resolves.toEqual({ result: { accepted: true } });
+    expect(
+      events.some(
+        (event) =>
+          event.e === "package.diagnostic" &&
+          String((event.p as { message?: unknown }).message).includes("handler exploded"),
+      ),
+    ).toBe(true);
+
+    ui!.setWidget("fleet", ["read only"]);
+    const replaced = await dispatch("retry");
+    expect("error" in replaced && replaced.error.code).toBe("STALE_REVISION");
+    binding.cleanup();
+  });
+
+  it("rejects an ambiguous public key instead of guessing an Extension", async () => {
+    let origin = trustedToolOrigin;
+    let ui: ReturnType<typeof createExtensionUiContext> | undefined;
+    const session = {
+      bindExtensions: async ({ uiContext }: { uiContext: typeof ui }) => {
+        ui = uiContext;
+      },
+    };
+    const binding = await bindExtensionUi(session as never, null, {
+      emit: () => {},
+      getIdentity: () => id,
+      getActiveInvocation: () => ({ origin, active: true }) as never,
+    });
+    const publish = await binding.activate();
+    publish();
+    const received: string[] = [];
+    const publishForOrigin = (name: string) => {
+      ui!.onWidgetAction("summary", () => {
+        received.push(name);
+      });
+      ui!.setWidget("summary", {
+        pideck: 1,
+        rows: [{ kind: "actions", actions: [{ id: "open", label: "Open" }] }],
+      });
+    };
+    publishForOrigin("review");
+    origin = { ...trustedToolOrigin, extensionId: "ext_other", extensionDisplayName: "Other" };
+    publishForOrigin("other");
+
+    const { handlers } = extensionUiHandlers();
+    const result = await handlers["extensionUi.widgetAction"]!({
+      id: "ambiguous-widget-action",
+      context: targetContext(),
+      params: { key: "summary", actionId: "open" },
+    } as never);
+    expect("error" in result && result.error.code).toBe("STALE_REVISION");
+    expect(received).toEqual([]);
+    binding.cleanup();
+  });
+
   it("attaches active invocation origin to widget, status, and custom start", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({

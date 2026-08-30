@@ -1,11 +1,23 @@
-import { useId } from "react";
-import { ChevronRight } from "lucide-react";
+import { useId, useState } from "react";
+import { ChevronRight, LoaderCircle } from "lucide-react";
+import {
+  parseStructuredWidget,
+  type StructuredWidget,
+  type StructuredWidgetAction,
+  type StructuredWidgetTone,
+} from "@pideck/protocol";
+import { Dialog, primaryButton, secondaryButton } from "../../components/Dialog";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
 import { statusChipText } from "../../lib/extension-ui-status-text";
 import { stripAnsi } from "../../lib/strip-ansi";
 import type { ExtensionRendererForm } from "../../lib/extension-ui-renderer-form";
 import type { LiveWidgetContent } from "../../lib/extension-ui-slots";
+
+export type ExtensionWidgetActionDispatch = (
+  key: string,
+  actionId: string,
+) => Promise<string | null>;
 
 function renderWidget(widget: unknown): string {
   if (typeof widget === "string") return widget;
@@ -21,6 +33,18 @@ function widgetSummary(widget: unknown): string {
     .split("\n")
     .find((line) => line.trim() !== "");
   return firstLine ? firstLine.trim() : "";
+}
+
+function structuredWidgetSummary(widget: StructuredWidget): string {
+  for (const row of widget.rows) {
+    if (row.kind === "text") return row.text.split("\n")[0]?.trim() ?? "";
+    if (row.kind === "fields" && row.fields[0]) {
+      return `${row.fields[0].label}: ${row.fields[0].value}`;
+    }
+    if (row.kind === "progress") return row.label ?? `${row.value} / ${row.max}`;
+    if (row.kind === "actions" && row.actions[0]) return row.actions[0].label;
+  }
+  return "";
 }
 
 function isPrimitiveValue(value: unknown): value is string | number | boolean | null {
@@ -87,12 +111,166 @@ function PanelWidgetBody({ widget }: { widget: unknown }) {
   );
 }
 
+const STRUCTURED_TEXT_TONE: Record<StructuredWidgetTone, string> = {
+  default: "text-foreground",
+  muted: "text-muted",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+
+function structuredActionClass(action: StructuredWidgetAction): string {
+  if (action.style === "primary") return primaryButton;
+  if (action.style === "danger") {
+    return `${secondaryButton} border-danger/40 text-danger hover:bg-danger/10`;
+  }
+  return secondaryButton;
+}
+
+function StructuredWidgetBody({
+  widget,
+  widgetKey,
+  onAction,
+}: {
+  widget: StructuredWidget;
+  widgetKey: string;
+  onAction?: ExtensionWidgetActionDispatch;
+}) {
+  const t = useT();
+  const pushNotification = useAppStore((state) => state.pushNotification);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<StructuredWidgetAction | null>(null);
+
+  const runAction = async (action: StructuredWidgetAction) => {
+    if (!onAction || action.disabled || pendingActionId !== null) return;
+    setPendingActionId(action.id);
+    try {
+      const error = await onAction(widgetKey, action.id);
+      if (error) pushNotification(error, "error");
+    } catch (error) {
+      pushNotification(
+        error instanceof Error ? error.message : t("extensionWidgetActionFailed"),
+        "error",
+      );
+    } finally {
+      setPendingActionId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 text-xs" data-extension-structured-widget>
+      {widget.rows.map((row, rowIndex) => {
+        if (row.kind === "text") {
+          return (
+            <p
+              key={rowIndex}
+              className={`whitespace-pre-wrap break-words ${STRUCTURED_TEXT_TONE[row.tone ?? "default"]}`}
+            >
+              {row.text}
+            </p>
+          );
+        }
+        if (row.kind === "fields") {
+          return (
+            <dl
+              key={rowIndex}
+              className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1"
+            >
+              {row.fields.map((field, fieldIndex) => (
+                <div key={`${field.label}:${fieldIndex}`} className="contents">
+                  <dt className="truncate text-muted" title={field.label}>
+                    {field.label}
+                  </dt>
+                  <dd className="min-w-0 whitespace-pre-wrap break-words text-foreground">
+                    {field.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          );
+        }
+        if (row.kind === "progress") {
+          const percent = (row.value / row.max) * 100;
+          const label = row.label ?? `${row.value} / ${row.max}`;
+          return (
+            <div key={rowIndex} className="flex flex-col gap-1">
+              {row.label ? (
+                <div className="flex items-center justify-between gap-2 text-muted">
+                  <span className="truncate">{row.label}</span>
+                  <span className="shrink-0 font-mono">
+                    {row.value} / {row.max}
+                  </span>
+                </div>
+              ) : null}
+              <div
+                role="progressbar"
+                aria-label={label}
+                aria-valuemin={0}
+                aria-valuemax={row.max}
+                aria-valuenow={row.value}
+                className="h-1.5 overflow-hidden rounded-full bg-surface-overlay"
+              >
+                <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div key={rowIndex} className="flex flex-wrap items-center gap-2">
+            {row.actions.map((action) => {
+              const pending = pendingActionId === action.id;
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={structuredActionClass(action)}
+                  disabled={action.disabled || pendingActionId !== null || !onAction}
+                  aria-busy={pending || undefined}
+                  onClick={() => {
+                    if (action.confirm) setConfirming(action);
+                    else void runAction(action);
+                  }}
+                >
+                  {pending ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      size={13}
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                  ) : null}
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+      {confirming ? (
+        <Dialog
+          title={t("extensionWidgetActionConfirmTitle", { action: confirming.label })}
+          confirmLabel={confirming.label}
+          tone={confirming.style === "danger" ? "danger" : "default"}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const action = confirming;
+            setConfirming(null);
+            void runAction(action);
+          }}
+        >
+          <p>{confirming.confirm}</p>
+        </Dialog>
+      ) : null}
+    </div>
+  );
+}
+
 export function ExtensionWidgetRows({
   widgets,
   form,
+  onAction,
 }: {
   widgets: readonly LiveWidgetContent[];
   form: ExtensionRendererForm;
+  onAction?: ExtensionWidgetActionDispatch;
 }) {
   const t = useT();
   const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
@@ -104,6 +282,7 @@ export function ExtensionWidgetRows({
           key={entry.storageKey ?? entry.key}
           entry={entry}
           form={form}
+          onAction={onAction}
           collapsed={collapsedWidgetKeys[entry.storageKey ?? entry.key] === true}
           onToggle={() => onToggleCollapsed(entry.storageKey ?? entry.key)}
           label={t("extWidgetLabel", { key: entry.key })}
@@ -122,6 +301,7 @@ export function ExtensionWidgetRows({
 function WidgetRow({
   entry,
   form,
+  onAction,
   collapsed,
   onToggle,
   label,
@@ -129,13 +309,20 @@ function WidgetRow({
 }: {
   entry: LiveWidgetContent;
   form: ExtensionRendererForm;
+  onAction?: ExtensionWidgetActionDispatch;
   collapsed: boolean;
   onToggle: () => void;
   label: string;
   toggleLabel: string;
 }) {
   const contentId = useId();
-  const summary = form === "strip" ? widgetSummary(entry.widget) : "";
+  const structured = parseStructuredWidget(entry.widget);
+  const summary =
+    form === "strip"
+      ? structured
+        ? structuredWidgetSummary(structured)
+        : widgetSummary(entry.widget)
+      : "";
   return (
     <section className={collapsed ? undefined : "py-0.5"} aria-label={label}>
       <button
@@ -171,7 +358,9 @@ function WidgetRow({
       </button>
       {!collapsed && (
         <div id={contentId} className="mt-1 pl-5">
-          {form === "panel" ? (
+          {structured ? (
+            <StructuredWidgetBody widget={structured} widgetKey={entry.key} onAction={onAction} />
+          ) : form === "panel" ? (
             <PanelWidgetBody widget={entry.widget} />
           ) : (
             <pre

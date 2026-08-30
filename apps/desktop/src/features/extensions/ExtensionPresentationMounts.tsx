@@ -66,6 +66,7 @@ import { useWindowedFloats } from "../../lib/extension-float-placement-state";
 import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
 import { statusChipText } from "../../lib/extension-ui-status-text";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
+import { dispatchExtensionWidgetAction } from "../../lib/extension-widget-action";
 
 function usePresentationSlots(): ExtensionPresentationSlot[] {
   return useLiveExtensionPresentationSlots();
@@ -99,7 +100,15 @@ function SlotBody({
   visible?: boolean;
 }) {
   const form = rendererFormFor(family === "status" ? "status" : "widget", mount.home.kind);
-  if (mount.widgets?.length) return <ExtensionWidgetRows widgets={mount.widgets} form={form} />;
+  if (mount.widgets?.length) {
+    return (
+      <ExtensionWidgetRows
+        widgets={mount.widgets}
+        form={form}
+        onAction={dispatchExtensionWidgetAction}
+      />
+    );
+  }
   if (mount.statuses?.length) return <ExtensionStatusRows statuses={mount.statuses} form={form} />;
   if (mount.custom) return <ExtensionTerminal visible={visible} />;
   return null;

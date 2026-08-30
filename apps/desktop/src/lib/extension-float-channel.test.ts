@@ -6,6 +6,7 @@ import {
   floatContentChanged,
   floatContentMessage,
   isIntentForSlot,
+  isLiveFloatWidgetAction,
   type FloatChrome,
 } from "./extension-float-channel";
 import type { ExtensionPresentationSlot, PresentationSlotMount } from "./extension-ui-slots";
@@ -119,6 +120,62 @@ describe("isIntentForSlot", () => {
 
   it("rejects intent aimed at another slot", () => {
     expect(isIntentForSlot({ kind: "close", slotId: "b:widget" }, "a:widget")).toBe(false);
+  });
+});
+
+describe("isLiveFloatWidgetAction", () => {
+  const structured = mount({
+    widgets: [
+      {
+        key: "fleet",
+        widget: {
+          pideck: 1,
+          rows: [
+            {
+              kind: "actions",
+              actions: [
+                { id: "open", label: "Open" },
+                { id: "disabled", label: "Disabled", disabled: true },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  it("accepts only a live enabled action for the addressed widget key", () => {
+    expect(isLiveFloatWidgetAction(structured, "fleet", "open")).toBe(true);
+    expect(isLiveFloatWidgetAction(structured, "other", "open")).toBe(false);
+    expect(isLiveFloatWidgetAction(structured, "fleet", "missing")).toBe(false);
+    expect(isLiveFloatWidgetAction(structured, "fleet", "disabled")).toBe(false);
+  });
+
+  it("rejects read-only and newer-version payloads", () => {
+    expect(
+      isLiveFloatWidgetAction(
+        mount({ widgets: [{ key: "fleet", widget: ["open"] }] }),
+        "fleet",
+        "open",
+      ),
+    ).toBe(false);
+    expect(
+      isLiveFloatWidgetAction(
+        mount({
+          widgets: [
+            {
+              key: "fleet",
+              widget: {
+                pideck: 2,
+                rows: [{ kind: "actions", actions: [{ id: "open", label: "Open" }] }],
+              },
+            },
+          ],
+        }),
+        "fleet",
+        "open",
+      ),
+    ).toBe(false);
   });
 });
 

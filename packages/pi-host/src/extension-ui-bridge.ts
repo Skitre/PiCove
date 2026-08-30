@@ -37,6 +37,7 @@ import {
   MAX_EXTENSION_UI_OPTIONS,
   MAX_EXTENSION_UI_SOURCE_LABEL_LENGTH,
   MAX_EXTENSION_UI_TITLE_LENGTH,
+  parseStructuredWidget,
   type ExtensionDecisionPresentation,
   type ExtensionDialogPresentationOverrides,
   type ExtensionUiClosedReason,
@@ -94,6 +95,20 @@ type ActiveCustom = {
   terminal: VirtualTerminal;
   owner: ExtensionUiOwner;
 };
+
+type WidgetActionCandidate = {
+  invoke: () => Promise<void>;
+};
+
+type WidgetActionRegistry = {
+  candidates: (
+    key: string,
+    actionId: string,
+    expectedOwner: ExtensionUiOwner,
+  ) => WidgetActionCandidate[];
+};
+
+const activeWidgetActionRegistries = new Set<WidgetActionRegistry>();
 
 const pending = new Map<string, PendingUi>();
 
@@ -471,6 +486,45 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
   const publishedWidgetKeys = new Set<string>();
   const widgetOrigins = new Map<string, ExtensionUiOrigin>();
   const statusOrigins = new Map<string, ExtensionUiOrigin>();
+  const structuredWidgetActions = new Map<string, { key: string; actionIds: Set<string> }>();
+  const widgetActionHandlers = new Map<
+    string,
+    { key: string; handler: (actionId: string) => void | Promise<void> }
+  >();
+
+  const widgetActionRegistry: WidgetActionRegistry = {
+    candidates: (key, actionId, expectedOwner) => {
+      if (!ownerMatches(ownerFromIdentity(identityAt()), expectedOwner)) return [];
+      const candidates: WidgetActionCandidate[] = [];
+      for (const [storageKey, published] of structuredWidgetActions) {
+        if (published.key !== key || !published.actionIds.has(actionId)) continue;
+        const registered = widgetActionHandlers.get(storageKey);
+        if (!registered || registered.key !== key) continue;
+        candidates.push({
+          invoke: async () => {
+            try {
+              await registered.handler(actionId);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              opts.emit("package.diagnostic", {
+                severity: "info",
+                message: `Extension widget action failed for key=${key}, action=${actionId}: ${stripAnsi(message)}`,
+              });
+            }
+          },
+        });
+      }
+      return candidates;
+    },
+  };
+  if (opts.registerCleanup) {
+    activeWidgetActionRegistries.add(widgetActionRegistry);
+    opts.registerCleanup(() => {
+      activeWidgetActionRegistries.delete(widgetActionRegistry);
+      structuredWidgetActions.clear();
+      widgetActionHandlers.clear();
+    });
+  }
 
   const captureTrustedOrigin = (): ExtensionUiOrigin => {
     const invocationOrigin = activeInvocation()?.origin;
@@ -514,6 +568,22 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     if (live) publishedWidgetKeys.add(storageKey);
     else publishedWidgetKeys.delete(storageKey);
     const resolvedOrigin = originForLiveKey(widgetOrigins, storageKey, origin, live);
+    const actionStorageKey = liveStateIdentity(key, resolvedOrigin);
+    const structured =
+      live && isTrustedExtensionUiOrigin(resolvedOrigin) ? parseStructuredWidget(widget) : null;
+    const enabledActionIds = structured?.rows.flatMap((row) =>
+      row.kind === "actions"
+        ? row.actions.filter((action) => action.disabled !== true).map((action) => action.id)
+        : [],
+    );
+    if (enabledActionIds?.length) {
+      structuredWidgetActions.set(actionStorageKey, {
+        key,
+        actionIds: new Set(enabledActionIds),
+      });
+    } else {
+      structuredWidgetActions.delete(actionStorageKey);
+    }
     opts.emit("extensionUi.widgetChanged", {
       key,
       widget,
@@ -744,6 +814,21 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       opts.onRendererActivity?.();
     },
     onTerminalInput: () => () => {},
+    onWidgetAction: (key, handler) => {
+      const sanitizedKey = stripAnsi(String(key));
+      const capturedOrigin = captureTrustedOrigin();
+      if (!isTrustedExtensionUiOrigin(capturedOrigin) || typeof handler !== "function") {
+        return () => {};
+      }
+      const storageKey = liveStateIdentity(sanitizedKey, capturedOrigin);
+      const registered = { key: sanitizedKey, handler };
+      widgetActionHandlers.set(storageKey, registered);
+      return () => {
+        if (widgetActionHandlers.get(storageKey) === registered) {
+          widgetActionHandlers.delete(storageKey);
+        }
+      };
+    },
     setStatus: (key, text) => {
       const sanitizedKey = stripAnsi(String(key));
       const liveText = text === undefined ? "" : stripAnsi(String(text));
@@ -1388,6 +1473,20 @@ export function injectExtensionCustomInput(
   return true;
 }
 
+/** Deliver one declared widget action to its unique trusted live publisher. */
+async function dispatchExtensionWidgetAction(
+  key: string,
+  actionId: string,
+  expectedOwner: ExtensionUiOwner,
+): Promise<boolean> {
+  const candidates = [...activeWidgetActionRegistries].flatMap((registry) =>
+    registry.candidates(key, actionId, expectedOwner),
+  );
+  if (candidates.length !== 1) return false;
+  await candidates[0]!.invoke();
+  return true;
+}
+
 /** Resize a live custom panel's virtual terminal. False if unknown/closed. */
 function resizeExtensionCustom(
   requestId: string,
@@ -1455,6 +1554,29 @@ export function createExtensionUiHandlers(
           error: createHostError(
             "STALE_REVISION",
             "Unknown, expired, or stale Extension UI requestId",
+          ),
+        };
+      }
+      return { result: { accepted: true } };
+    },
+    "extensionUi.widgetAction": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, {
+        requireWorkspace: true,
+      });
+      if (stale) return { error: stale };
+
+      const params = ctx.params as { key: string; actionId: string };
+      if (
+        !(await dispatchExtensionWidgetAction(
+          params.key,
+          params.actionId,
+          ownerFromTargetContext(ctx.context as SessionTargetContext),
+        ))
+      ) {
+        return {
+          error: createHostError(
+            "STALE_REVISION",
+            "Unknown, disabled, ambiguous, or stale Extension widget action",
           ),
         };
       }
