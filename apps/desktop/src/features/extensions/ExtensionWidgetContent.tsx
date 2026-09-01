@@ -267,14 +267,20 @@ export function ExtensionWidgetRows({
   widgets,
   form,
   onAction,
+  collapsedWidgetKeys: controlledCollapsedWidgetKeys,
+  onToggleCollapsed: controlledOnToggleCollapsed,
 }: {
   widgets: readonly LiveWidgetContent[];
   form: ExtensionRendererForm;
   onAction?: ExtensionWidgetActionDispatch;
+  collapsedWidgetKeys?: Readonly<Record<string, true>>;
+  onToggleCollapsed?: (key: string) => void;
 }) {
   const t = useT();
-  const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
-  const onToggleCollapsed = useAppStore((state) => state.toggleExtensionWidgetCollapsed);
+  const storedCollapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
+  const storedOnToggleCollapsed = useAppStore((state) => state.toggleExtensionWidgetCollapsed);
+  const collapsedWidgetKeys = controlledCollapsedWidgetKeys ?? storedCollapsedWidgetKeys;
+  const onToggleCollapsed = controlledOnToggleCollapsed ?? storedOnToggleCollapsed;
   return (
     <div className="flex flex-col gap-1">
       {widgets.map((entry) => (

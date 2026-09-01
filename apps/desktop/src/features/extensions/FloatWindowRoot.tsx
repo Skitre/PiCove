@@ -268,6 +268,10 @@ function FloatBody({ message, waiting }: { message: FloatContentMessage | null; 
       <ExtensionWidgetRows
         widgets={message.body.widgets}
         form={rendererFormFor("widget", "float")}
+        collapsedWidgetKeys={message.body.collapsedWidgetKeys}
+        onToggleCollapsed={(key) =>
+          void sendFloatIntent({ kind: "toggleWidgetCollapsed", slotId: message.slotId, key })
+        }
         onAction={async (key, actionId) => {
           try {
             await sendFloatIntent({

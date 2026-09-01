@@ -70,7 +70,11 @@ function contentMessage(overrides: Partial<FloatContentMessage> = {}): FloatCont
       reducedMotion: false,
       pinned: false,
     },
-    body: { kind: "widgets", widgets: [{ key: "fleet", widget: ["ready"] }] },
+    body: {
+      kind: "widgets",
+      widgets: [{ key: "fleet", widget: ["ready"] }],
+      collapsedWidgetKeys: {},
+    },
     ...overrides,
   };
 }
@@ -95,6 +99,36 @@ afterEach(() => {
 });
 
 describe("FloatWindowRoot placement", () => {
+  it("sends a collapse intent and reflects the main window's collapsed state", async () => {
+    render(<FloatWindowRoot slotId={SLOT} />);
+    await publish(contentMessage());
+
+    const collapse = screen.getByRole("button", { name: "Collapse extension widget fleet" });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("ready")).toBeInTheDocument();
+    await userEvent.click(collapse);
+    expect(transport.intents).toContainEqual({
+      kind: "toggleWidgetCollapsed",
+      slotId: SLOT,
+      key: "fleet",
+    });
+
+    await publish(
+      contentMessage({
+        body: {
+          kind: "widgets",
+          widgets: [{ key: "fleet", widget: ["ready"] }],
+          collapsedWidgetKeys: { fleet: true },
+        },
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Expand extension widget fleet" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByText("ready")).toBeNull();
+  });
+
   it("offers every destination except the one this window already is", async () => {
     render(<FloatWindowRoot slotId={SLOT} />);
     await publish(contentMessage());
@@ -139,6 +173,7 @@ describe("FloatWindowRoot placement", () => {
       contentMessage({
         body: {
           kind: "widgets",
+          collapsedWidgetKeys: {},
           widgets: [
             {
               key: "fleet",

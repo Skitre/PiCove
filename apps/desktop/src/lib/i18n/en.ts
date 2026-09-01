@@ -197,6 +197,9 @@ export const en = {
   extensionUiHomeHidden: "Hidden",
   extensionUiHomeInline: "Chat inline",
   extensionUiHomeModal: "Modal",
+  extensionUiPlacementDefault: "Extension default",
+  extensionUiPlacementDockPrimary: "Dock · primary",
+  extensionUiPlacementDockSecondary: "Dock · secondary",
   extensionUiDragHandle: "Drag to move",
   extensionUiPlacementHint:
     "{name}'s interface placement is customizable in Settings › Extension UI.",

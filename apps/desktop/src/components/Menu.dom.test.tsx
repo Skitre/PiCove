@@ -87,4 +87,33 @@ describe("MenuHost", () => {
     await waitFor(() => expect(screen.getByRole("menuitem", { name: "Second" })).toHaveFocus());
     expect(screen.queryByRole("menuitem", { name: "First" })).not.toBeInTheDocument();
   });
+
+  it("renders compact density and marks the current item without focusing it", async () => {
+    render(<MenuHost />);
+    act(() => {
+      openContextMenu({
+        x: 10,
+        y: 10,
+        trigger: null,
+        density: "compact",
+        items: [
+          {
+            id: "current",
+            label: "Current",
+            selected: true,
+            disabled: true,
+            onSelect: vi.fn(),
+          },
+          { id: "next", label: "Next", onSelect: vi.fn() },
+        ],
+      });
+    });
+
+    expect(screen.getByRole("menu")).toHaveAttribute("data-menu-density", "compact");
+    expect(screen.getByRole("menuitem", { name: "Current" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Next" })).toHaveFocus());
+  });
 });

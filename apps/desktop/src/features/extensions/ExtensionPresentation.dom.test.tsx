@@ -585,22 +585,23 @@ describe("Extension presentation mounts", () => {
     );
 
     fireEvent.contextMenu(document.querySelector("[data-extension-slot='pi-subagents:widget']")!);
-    expect(screen.queryByRole("menuitem", { name: "Above composer" })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: "Follow Extension" })).toBeInTheDocument();
+    expect(screen.getByRole("menu")).toHaveAttribute("data-menu-density", "compact");
+    expect(screen.getByRole("menuitem", { name: "Above composer" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Above composer" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: "Extension default" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Below composer" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Extensions Dock · primary" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitem", { name: "Extensions Dock · secondary" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Dock · primary" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Dock · secondary" })).toBeInTheDocument();
     // A float is its own OS window; the in-window layer is where one lands when
     // no window can be opened, which is not something to choose.
     expect(screen.queryByRole("menuitem", { name: "Floating panel" })).toBeNull();
-    expect(
-      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Its own window" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Hidden" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("menuitem", { name: "Extensions Dock · primary" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Dock · primary" }));
     await waitFor(() =>
       expect(
         useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
@@ -650,10 +651,7 @@ describe("Extension presentation mounts", () => {
     );
   });
 
-  it("opens the placement list from a visible button on both the float and the anchor strip", async () => {
-    // Right-click was the only way in, and a drag cannot be used to browse the
-    // placements: releasing the pointer is what commits a drop, so the list
-    // vanishes at the moment the user reaches for it.
+  it("uses one placement button on the anchor strip and no drag handle", async () => {
     useAppStore.getState().setDesktopSettings({
       ...BASE_SETTINGS,
       extensionUi: {
@@ -677,9 +675,7 @@ describe("Extension presentation mounts", () => {
       screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
     );
     expect(screen.getByRole("menuitem", { name: "Above composer" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Its own window" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("menuitem", { name: "Above composer" }));
     await waitFor(() =>
@@ -689,42 +685,9 @@ describe("Extension presentation mounts", () => {
       ).toMatchObject({ kind: "anchor", slot: "aboveComposer" }),
     );
 
-    // The same control exists once the widget is anchored, so the route back
-    // does not depend on discovering the context menu either.
-    await userEvent.click(
-      screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
-    );
-    expect(
-      screen.getByRole("menuitem", { name: "Move pi-subagents Widget to its own window" }),
-    ).toBeInTheDocument();
-  });
-
-  it("keeps the undo toast off the drop targets while a drag is live", async () => {
-    // A placement change raises the toast for six seconds, so changing one and
-    // dragging again used to put the toast straight on top of the targets.
-    mountWidget({ placement: "aboveEditor" });
-    render(
-      <>
-        <ChatPage />
-        <MenuHost />
-      </>,
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
-    );
-    await userEvent.click(screen.getByRole("menuitem", { name: "Below composer" }));
-    const toast = await screen.findByText(/Applies to all sessions/);
-    const banner = toast.closest("[data-extension-ui-undo]")!;
-    expect(banner).toHaveAttribute("data-extension-ui-undo-raised", "false");
-
-    const handle = document.querySelector("[data-extension-drag-handle]")!;
-    fireEvent.pointerDown(handle, { pointerId: 7, button: 0 });
-    await waitFor(() => expect(banner).toHaveAttribute("data-extension-ui-undo-raised", "true"));
-    expect(document.querySelector("[data-extension-drop-overlay]")).toBeInTheDocument();
-
-    fireEvent.pointerUp(document, { pointerId: 7, clientX: 5, clientY: 5 });
-    await waitFor(() => expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull());
+    const anchor = document.querySelector("[data-extension-anchor='aboveComposer']")!;
+    expect(anchor.querySelector("[data-extension-drag-handle]")).toBeNull();
+    expect(anchor.querySelectorAll("[data-extension-placement-button]")).toHaveLength(1);
   });
 
   it("yields a float to its own window, and draws it again when the window goes away", () => {
@@ -752,72 +715,6 @@ describe("Extension presentation mounts", () => {
     act(() => resetWindowedFloatsForTests());
     expect(screen.getByRole("dialog", { name: "pi-subagents Widget" })).toBeInTheDocument();
     view.unmount();
-  });
-
-  it("moves an anchored widget into the Dock through the drag handle and overlay", async () => {
-    mountWidget({ placement: "aboveEditor" });
-    render(<ChatPage />);
-
-    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
-    const handle = document.querySelector("[data-extension-drag-handle]")!;
-    fireEvent.pointerDown(handle, { pointerId: 7, clientX: 200, clientY: 300 });
-
-    const overlay = document.querySelector("[data-extension-drop-overlay]")!;
-    expect(overlay.querySelectorAll("[data-extension-drop]")).toHaveLength(4);
-    const zone = overlay.querySelector("[data-extension-drop='dock-primary']")!;
-
-    Object.defineProperty(document, "elementFromPoint", {
-      configurable: true,
-      value: () => zone,
-    });
-    fireEvent.pointerUp(document, { pointerId: 7, clientX: 500, clientY: 500 });
-
-    await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
-          ?.home,
-      ).toMatchObject({ kind: "dock", group: "primary" }),
-    );
-    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
-  });
-
-  it("floats an anchored widget at the pointer with a clamped default rect on empty drops", async () => {
-    mountWidget({ placement: "aboveEditor" });
-    render(<ChatPage />);
-
-    const handle = document.querySelector("[data-extension-drag-handle]")!;
-    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 200, clientY: 300 });
-    Object.defineProperty(document, "elementFromPoint", {
-      configurable: true,
-      value: () => null,
-    });
-    fireEvent.pointerUp(document, { pointerId: 8, clientX: 10, clientY: 5 });
-
-    await waitFor(() =>
-      expect(
-        useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
-          ?.home?.kind,
-      ).toBe("float"),
-    );
-    expect(
-      useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"]?.widget
-        ?.home,
-    ).toMatchObject({ rect: { x: 8 / 1200, y: 8 / 800, width: 360, height: 240 } });
-  });
-
-  it("cancels an anchor drag with Escape and writes nothing", () => {
-    mountWidget({ placement: "aboveEditor" });
-    render(<ChatPage />);
-
-    const handle = document.querySelector("[data-extension-drag-handle]")!;
-    fireEvent.pointerDown(handle, { pointerId: 9, clientX: 200, clientY: 300 });
-    expect(document.querySelector("[data-extension-drop-overlay]")).toBeInTheDocument();
-
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(document.querySelector("[data-extension-drop-overlay]")).toBeNull();
-    expect(
-      useAppStore.getState().desktopSettings?.extensionUi?.presentations["pi-subagents"],
-    ).toBeUndefined();
   });
 
   it("shows overlay targets while dragging a float and releases them on drop", async () => {

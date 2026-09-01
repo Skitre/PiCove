@@ -45,6 +45,36 @@ afterEach(() => {
 });
 
 describe("structured Extension widgets", () => {
+  it("supports controlled collapse state for a detached window", async () => {
+    const onToggleCollapsed = vi.fn();
+    const { rerender } = render(
+      <ExtensionWidgetRows
+        widgets={[{ key: "fleet", widget: ["ready"] }]}
+        form="panel"
+        collapsedWidgetKeys={{}}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Collapse extension widget fleet" }));
+    expect(onToggleCollapsed).toHaveBeenCalledWith("fleet");
+    expect(screen.getByText("ready")).toBeInTheDocument();
+
+    rerender(
+      <ExtensionWidgetRows
+        widgets={[{ key: "fleet", widget: ["ready"] }]}
+        form="panel"
+        collapsedWidgetKeys={{ fleet: true }}
+        onToggleCollapsed={onToggleCollapsed}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Expand extension widget fleet" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByText("ready")).toBeNull();
+  });
+
   it("renders semantic rows and host-owned controls", () => {
     render(
       <ExtensionWidgetRows

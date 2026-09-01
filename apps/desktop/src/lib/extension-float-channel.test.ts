@@ -6,6 +6,7 @@ import {
   floatContentChanged,
   floatContentMessage,
   isIntentForSlot,
+  isLiveFloatWidgetKey,
   isLiveFloatWidgetAction,
   type FloatChrome,
 } from "./extension-float-channel";
@@ -40,7 +41,27 @@ function mount(partial: Partial<PresentationSlotMount>): PresentationSlotMount {
 describe("floatContentBody", () => {
   it("carries widget rows", () => {
     const widgets = [{ key: "fleet", widget: ["a", "b"] }];
-    expect(floatContentBody(mount({ widgets }))).toEqual({ kind: "widgets", widgets });
+    expect(floatContentBody(mount({ widgets }))).toEqual({
+      kind: "widgets",
+      widgets,
+      collapsedWidgetKeys: {},
+    });
+  });
+
+  it("carries only collapsed keys belonging to widgets in this Float", () => {
+    const widgets = [
+      { key: "fleet", storageKey: "trusted:fleet", widget: ["a"] },
+      { key: "queue", widget: ["b"] },
+    ];
+    expect(
+      floatContentBody(mount({ widgets }), {
+        "trusted:fleet": true,
+        queue: true,
+        unrelated: true,
+      }),
+    ).toMatchObject({
+      collapsedWidgetKeys: { "trusted:fleet": true, queue: true },
+    });
   });
 
   it("carries status rows", () => {
@@ -111,6 +132,16 @@ describe("floatContentChanged", () => {
     });
     expect(floatContentChanged(base, pinned)).toBe(true);
   });
+
+  it("sends when only collapsed widget state changes", () => {
+    const collapsed = floatContentMessage({
+      slot,
+      mount: mount({ widgets: [{ key: "fleet", widget: ["a"] }] }),
+      chrome,
+      collapsedWidgetKeys: { fleet: true },
+    });
+    expect(floatContentChanged(base, collapsed)).toBe(true);
+  });
 });
 
 describe("isIntentForSlot", () => {
@@ -176,6 +207,18 @@ describe("isLiveFloatWidgetAction", () => {
         "open",
       ),
     ).toBe(false);
+  });
+});
+
+describe("isLiveFloatWidgetKey", () => {
+  const widgets = mount({
+    widgets: [{ key: "fleet", storageKey: "trusted:fleet", widget: ["ready"] }],
+  });
+
+  it("accepts only the storage key of a widget currently drawn by the Float", () => {
+    expect(isLiveFloatWidgetKey(widgets, "trusted:fleet")).toBe(true);
+    expect(isLiveFloatWidgetKey(widgets, "fleet")).toBe(false);
+    expect(isLiveFloatWidgetKey(widgets, "other")).toBe(false);
   });
 });
 

@@ -1,3 +1,26 @@
+# Detached widget collapse parity findings (2026-09-01)
+
+- The detached root does render the shared disclosure button. The failure is
+  state ownership: `ExtensionWidgetRows` calls the detached window's isolated
+  Zustand action, while `toggleExtensionWidgetCollapsed` intentionally refuses
+  keys absent from that store's `extensionWidgets` map. Forwarded Float widget
+  content never populates that map, so every click is a no-op.
+- The shared disclosure is already a semantic button with `aria-expanded`,
+  `aria-controls`, localized labels, a visible focus ring, and reduced-motion
+  handling. No new visual pattern is needed; the fix belongs at the detached
+  window state/intent boundary.
+- Correct parity requires main-window ownership: add a narrowly validated
+  `toggleWidgetCollapsed` Float intent, include only this Float's collapsed
+  widget keys in its content message, and let `ExtensionWidgetRows` accept that
+  state as a controlled override. This preserves collapse when the widget is
+  reattached and prevents a detached window from mutating arbitrary keys.
+- `ExtensionFloatWindowController` must subscribe to the collapsed-key map so a
+  successful toggle causes a new content message; `floatContentChanged` will
+  then naturally publish the state delta without a special acknowledgement.
+- Live verification confirmed the full round trip: detached `rpiv-todos`
+  changed from expanded with two text rows to a collapsed disclosure-only tree,
+  expanded again, then reattached above Composer with content still expanded.
+
 # Findings: Pi SDK 0.84.2 upgrade audit
 
 ## Requirements
@@ -379,6 +402,93 @@ Review of commit `40e1bad` found seven implementation gaps behind the accepted d
   duplicate Escape/force flows and surface a stale-response error after another
   flow already closed the request. Their error path also mislabels Host close
   failures as desktop-settings save failures.
+# Detached Float resize re-attach diagnosis (2026-09-01)
+
+- User-visible symptom: while resizing an independent Extension Float by its OS
+  window border, after dragging for a while the surface automatically returns
+  to the main window's `aboveComposer` anchor form.
+- Live dev output contains no Host/runtime error at the time of the gesture;
+  the behavior is therefore likely in the Desktop detached-window lifecycle,
+  not an Extension handler crash.
+- Source search shows only two intended ways to remove `home.detached`: an
+  explicit re-attach/move intent, or detached placement reconciliation returning
+  `reattach` for `no-monitors` / `monitor-missing`. The resize gesture should
+  emit only a debounced `geometry` intent, so monitor reconciliation is the
+  leading hypothesis until the exact event chain is proven.
+- The controller polls `extension_float_monitors` every 2 seconds. A thrown IPC
+  error becomes `null` and preserves the previous topology, but a successful
+  empty array replaces it. On the next reconcile, `resolveDetachedPlacement`
+  returns `reattach/no-monitors`, removes the slot from `wanted`, closes the OS
+  window, and republishes it to the in-window float layer. This timing matches
+  “resizing for a while” crossing a polling tick.
+- Rust calls `app.available_monitors()` and returns its vector unchanged. The
+  command was already made synchronous because macOS had previously returned an
+  empty vector off the main thread; neither Rust nor Desktop currently requires
+  a second consecutive empty sample before treating it as real topology loss.
+- Geometry settings writes are serialized by `settingsWriteQueue`, and each
+  updater reads the latest store snapshot only after prior writes settle. A
+  stale concurrent geometry write is therefore not the likely cause.
+- The active native settings file is a `{schemaVersion, settings}` envelope.
+  The initial `anchor/aboveComposer` profile belonged to
+  `@narumitw/pi-plan-mode`, not the window the user was resizing. The clean
+  reproduction identified the affected Float as `@juicesharp/rpiv-todo`.
+- Neither the `geometry` intent handler nor sanitizer can manufacture an anchor:
+  geometry spreads a currently-live float home and replaces only `detached`;
+  invalid homes are removed, after which resolver defaults may render above the
+  composer but would not persist an explicit anchor object.
+- Undo timeout only calls `clearExtensionUiUndo()`; it never runs
+  `undoExtensionUiSettings()`. Automatic timeout is not the writer.
+- The Float intent relay preserves the `kind` field and only overwrites
+  `slotId`; a geometry payload cannot be misclassified as `setPlacement` by
+  Rust. `FloatWindowRoot` emits `setPlacement` only from its placement-menu
+  item callbacks.
+- Extension observation records only capabilities/display names. Resolver
+  defaults can choose `aboveComposer` when no saved profile exists, but neither
+  observation nor resolution persists that default. Extension widget updates
+  and placement hints cannot overwrite a legal saved float profile.
+- The clean reproduction captured 17 profile changes over roughly 81 seconds.
+  Every change retained `kind: "float"`, the same detached monitor descriptor,
+  and the newly reported rect. No anchor transition, explicit placement, Undo,
+  or invalid geometry occurred. Resize persistence is behaving correctly.
+- Both detach entry points await monitor resolution and then persist the full
+  float+detached home before the controller opens the native window. A normal
+  successful detach therefore cannot be merely in-memory.
+- Title-bar controls stop pointer-down propagation, so clicking the placement
+  button cannot also start the native title-bar drag. Border resize itself has
+  no React handler that opens the placement menu.
+- The production `commitExtensionPresentationHome` call graph contains no
+  timer-driven anchor writer: explicit commands/context menus/drop targets,
+  Float intents, Dock moves, and settings reset are the only callers. Controller
+  reconciliation intentionally performs no write when a monitor disappears.
+- Combined conclusion: the intermittent disappearance is most plausibly the
+  monitor poll accepting one transient successful `[]` sample as real topology
+  loss. That branch closes the OS window and republishes the Float in the main
+  window without changing the saved detached profile, matching both the user's
+  perception and the absence of any anchor write in a clean resize trace.
+
+# Anchor placement-control UI findings (2026-09-01)
+
+- Above/below Composer surfaces are inline content, so persistent drag chrome
+  creates an unnecessary mini-window hierarchy and competes with the content.
+- Removing the drag gesture also removes a nested gesture conflict. Placement
+  remains fully expressible through one semantic menu button and the existing
+  context-menu/command paths.
+- Progressive disclosure is appropriate on desktop, but the layout button must
+  become visible on both container hover and `focus-within`; its own focus ring
+  must remain visible so keyboard users never depend on hover.
+- Compact menu target: short destination labels, one consistent outline icon
+  column, current-state indication, and reduced padding/width without changing
+  semantic tokens or focus management.
+- `AnchorSlotRow` owns the redundant grip and all anchor-origin pointer-drag
+  lifecycle; removing that block does not affect Float title-bar movement or
+  the global drop overlay used by Floats.
+- The shared `Menu` is currently fixed at `min-w-48` with 32px-plus rows. A
+  request-level compact density keeps other application menus unchanged while
+  allowing the placement menu to be narrower and tighter.
+- Placement choices currently omit the active destination and have no icons.
+  A selected, disabled current row plus destination icons gives orientation
+  without making the menu chrome heavier.
+
 # Structured widgets implementation findings (2026-08-30)
 
 - Desktop widget content converges on `ExtensionWidgetContent` /

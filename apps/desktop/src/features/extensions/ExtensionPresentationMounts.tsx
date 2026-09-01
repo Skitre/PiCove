@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { GripVertical, LayoutGrid, Pin, X } from "lucide-react";
+import { LayoutGrid, Pin, X } from "lucide-react";
 import type { PresentationHome } from "@pideck/protocol";
 import { observedExtensionDisplayName } from "../../lib/extension-ui-observation";
 import {
@@ -31,16 +31,8 @@ import {
   useActiveExtensionUiDrag,
   useExtensionDropHighlight,
 } from "../../lib/extension-ui-drag-state";
-import {
-  isLegalPresentationChoice,
-  presentationChoiceFromHome,
-  presentationHomeFromChoice,
-} from "../../lib/extension-ui-presentation";
 import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
-import {
-  canCreateLiveExtensionFloat,
-  useLiveExtensionPresentationSlots,
-} from "../../lib/extension-ui-live-slots";
+import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
 import {
   clearExtensionUiUndo,
   commitExtensionPresentationHome,
@@ -55,10 +47,7 @@ import {
 } from "../../lib/extension-ui-slots";
 import { useAppStore } from "../../lib/stores/app-store";
 import { useT } from "../../lib/i18n/use-t";
-import {
-  canonicalExtensionUiSettings,
-  notifyDesktopSettingsSaveFailure,
-} from "../../lib/desktop-settings";
+import { notifyDesktopSettingsSaveFailure } from "../../lib/desktop-settings";
 import type { MessageKey } from "../../lib/i18n";
 import { closeExtensionTerminalWithFallback, ExtensionTerminal } from "../dock/ExtensionTerminal";
 import { ExtensionFloatTitleBar, ExtensionFloatTitleBarButton } from "./ExtensionFloatChrome";
@@ -238,101 +227,15 @@ function AnchorSlotRow({
   mount: PresentationSlotMount;
 }) {
   const t = useT();
-  const dragSession = useRef<{ pointerId: number } | null>(null);
-  const cleanupDrag = useRef<(() => void) | null>(null);
   const anchorName = slot.extensionId
     ? observedExtensionDisplayName(slot.extensionId)
     : slot.slotId;
   const anchorFamily = t(extensionUiFamilyMessageKey(slot.family));
 
-  useEffect(() => {
-    return () => {
-      cleanupDrag.current?.();
-      cleanupDrag.current = null;
-      dragSession.current = null;
-      endExtensionUiDrag();
-    };
-  }, []);
-
-  const commitHome = (home: PresentationHome) => {
-    if (!slot.extensionId) return;
-    const name = observedExtensionDisplayName(slot.extensionId);
-    void commitExtensionPresentationHome({
-      extensionId: slot.extensionId,
-      family: slot.family,
-      home,
-      message: t(extensionUiHomeMessageKey(home), {
-        name,
-        family: t(extensionUiFamilyMessageKey(slot.family)),
-      }),
-    }).catch(notifyDesktopSettingsSaveFailure);
-  };
-
-  const finishDrag = (clientX: number, clientY: number) => {
-    cleanupDrag.current?.();
-    cleanupDrag.current = null;
-    dragSession.current = null;
-    endExtensionUiDrag();
-    if (!slot.extensionId) return;
-    const drop = homeFromDropTarget(document.elementFromPoint?.(clientX, clientY) ?? null);
-    if (drop) {
-      const choice = presentationChoiceFromHome(slot.family, drop);
-      if (!isLegalPresentationChoice(slot.family, choice)) return;
-      if (choice === presentationChoiceFromHome(slot.family, mount.home)) return;
-      const settings = canonicalExtensionUiSettings(useAppStore.getState().desktopSettings);
-      commitHome(presentationHomeFromChoice(slot.family, choice, settings, mount.home));
-      return;
-    }
-    // A drop on empty space floats the widget at the pointer with the default size.
-    if (!canCreateLiveExtensionFloat(slot.slotId)) return;
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const pixel = clampAndSnapFloatRect(
-      { left: clientX - 180, top: clientY - 24, width: 360, height: 240 },
-      viewport,
-      readBrowserExclusionRect(),
-    );
-    commitHome({ kind: "float", rect: pixelsToNormalizedFloatRect(pixel, viewport) });
-  };
-
-  const cancelDrag = () => {
-    cleanupDrag.current?.();
-    cleanupDrag.current = null;
-    dragSession.current = null;
-    endExtensionUiDrag();
-  };
-
-  const onHandlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragSession.current || !slot.extensionId) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    dragSession.current = { pointerId: event.pointerId };
-    beginExtensionUiDrag({ slotId: slot.slotId, family: slot.family, withOverlay: true });
-    const up = (native: PointerEvent) => {
-      if (dragSession.current?.pointerId !== native.pointerId) return;
-      finishDrag(native.clientX, native.clientY);
-    };
-    const cancel = (native: PointerEvent) => {
-      if (dragSession.current?.pointerId !== native.pointerId) return;
-      cancelDrag();
-    };
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      cancelDrag();
-    };
-    document.addEventListener("pointerup", up);
-    document.addEventListener("pointercancel", cancel);
-    document.addEventListener("keydown", keydown);
-    cleanupDrag.current = () => {
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("pointercancel", cancel);
-      document.removeEventListener("keydown", keydown);
-    };
-  };
-
   return (
     <div
       data-extension-slot={slot.slotId}
-      className="flex items-start gap-1"
+      className="group/anchor flex items-start gap-1"
       onContextMenu={(event) =>
         openExtensionSlotContextMenu({
           family: slot.family,
@@ -343,42 +246,27 @@ function AnchorSlotRow({
         })
       }
     >
-      {/* One gutter, not two. Side by side these cost the content a second
-          column of width on a strip that is already narrow. */}
-      <div className="flex shrink-0 flex-col items-center gap-0.5 pt-1">
-        <div
-          data-extension-drag-handle
-          aria-label={t("extensionUiDragHandle")}
-          title={t("extensionUiDragHandle")}
-          className="cursor-grab touch-none rounded text-muted hover:text-foreground"
-          onPointerDown={onHandlePointerDown}
-        >
-          <GripVertical aria-hidden="true" size={12} />
-        </div>
-        {/* Dragging is a shortcut, not the only route: releasing the pointer is
-            what commits a drop, so a drag can never be used to *browse* the
-            placements. This button opens the same list and holds it open. */}
-        <button
-          type="button"
-          aria-label={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
-          title={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
-          className="rounded text-muted hover:text-foreground"
-          onClick={(event) =>
-            openExtensionSlotContextMenu({
-              family: slot.family,
-              extensionId: slot.extensionId,
-              currentHome: mount.home,
-              event,
-              t,
-            })
-          }
-        >
-          <LayoutGrid aria-hidden="true" size={12} />
-        </button>
-      </div>
       <div className="min-w-0 flex-1">
         <SlotBody mount={mount} family={slot.family} />
       </div>
+      <button
+        type="button"
+        data-extension-placement-button
+        aria-label={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
+        title={t("extensionUiPlacementMenu", { name: anchorName, family: anchorFamily })}
+        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded text-muted opacity-40 outline-none transition-[color,opacity] hover:bg-control-hover hover:text-foreground hover:opacity-100 group-hover/anchor:opacity-100 focus-visible:bg-control-hover focus-visible:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-focus"
+        onClick={(event) =>
+          openExtensionSlotContextMenu({
+            family: slot.family,
+            extensionId: slot.extensionId,
+            currentHome: mount.home,
+            event,
+            t,
+          })
+        }
+      >
+        <LayoutGrid aria-hidden="true" size={12} />
+      </button>
     </div>
   );
 }

@@ -7,6 +7,7 @@ export type MenuItem = {
   chordHint?: string;
   danger?: boolean;
   disabled?: boolean;
+  selected?: boolean;
   separatorBefore?: boolean;
   onSelect: () => void | Promise<void>;
 };
@@ -15,6 +16,7 @@ export type ContextMenuInput = {
   x: number;
   y: number;
   trigger: HTMLElement | null;
+  density?: "default" | "compact";
   items: MenuItem[];
 };
 
@@ -32,9 +34,7 @@ export function subscribeContextMenu(listener: Listener): () => void {
 }
 
 export function openContextMenu(request: ContextMenuInput): void {
-  current = request.items.length > 0
-    ? { ...request, requestId: nextRequestId++ }
-    : null;
+  current = request.items.length > 0 ? { ...request, requestId: nextRequestId++ } : null;
   for (const listener of listeners) listener(current);
 }
 

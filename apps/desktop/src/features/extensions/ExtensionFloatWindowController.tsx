@@ -15,6 +15,7 @@ import {
   appendFrameTail,
   floatContentChanged,
   floatContentMessage,
+  isLiveFloatWidgetKey,
   isLiveFloatWidgetAction,
   type FloatChrome,
   type FloatContentMessage,
@@ -109,6 +110,7 @@ export function ExtensionFloatWindowController() {
   const t = useT();
   const slots = useLiveExtensionPresentationSlots();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
+  const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
 
   /** slotId → window label, for windows this controller opened. */
   const open = useRef(new Map<string, string>());
@@ -291,7 +293,7 @@ export function ExtensionFloatWindowController() {
         reducedMotion,
         pinned: mount.home.pinned === true,
       };
-      const message = floatContentMessage({ slot, mount, chrome });
+      const message = floatContentMessage({ slot, mount, chrome, collapsedWidgetKeys });
       if (!floatContentChanged(lastContent.current.get(slot.slotId), message)) continue;
       lastContent.current.set(slot.slotId, message);
       void publishFloatContent(label, message);
@@ -388,6 +390,11 @@ export function ExtensionFloatWindowController() {
           void dispatchExtensionWidgetAction(intent.key, intent.actionId).then((error) => {
             if (error) useAppStore.getState().pushNotification(error, "error");
           });
+          return;
+        }
+        case "toggleWidgetCollapsed": {
+          if (!isLiveFloatWidgetKey(mount, intent.key)) return;
+          useAppStore.getState().toggleExtensionWidgetCollapsed(intent.key);
           return;
         }
         case "customReady": {

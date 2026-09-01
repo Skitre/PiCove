@@ -53,7 +53,11 @@ export type FloatChrome = {
  * re-sends the widget payload.
  */
 export type FloatContentBody =
-  | { kind: "widgets"; widgets: LiveWidgetContent[] }
+  | {
+      kind: "widgets";
+      widgets: LiveWidgetContent[];
+      collapsedWidgetKeys: Record<string, true>;
+    }
   | { kind: "statuses"; statuses: LiveStatusContent[] }
   | { kind: "custom"; requestId: string }
   | { kind: "empty" };
@@ -83,6 +87,7 @@ export type FloatIntent =
    * means, so a Float cannot invent a placement the family does not allow.
    */
   | { kind: "setPlacement"; slotId: string; choice: string }
+  | { kind: "toggleWidgetCollapsed"; slotId: string; key: string }
   | { kind: "widgetAction"; slotId: string; key: string; actionId: string }
   | { kind: "customInput"; slotId: string; requestId: string; data: string }
   | {
@@ -102,8 +107,18 @@ export type FloatIntent =
 /** One chunk of `custom()` output on its way to a Float window. */
 export type FloatFrameMessage = { slotId: string; requestId: string; data: string };
 
-export function floatContentBody(mount: PresentationSlotMount): FloatContentBody {
-  if (mount.widgets?.length) return { kind: "widgets", widgets: [...mount.widgets] };
+export function floatContentBody(
+  mount: PresentationSlotMount,
+  collapsedWidgetKeys: Readonly<Record<string, true>> = {},
+): FloatContentBody {
+  if (mount.widgets?.length) {
+    const collapsed: Record<string, true> = {};
+    for (const widget of mount.widgets) {
+      const key = widget.storageKey ?? widget.key;
+      if (collapsedWidgetKeys[key]) collapsed[key] = true;
+    }
+    return { kind: "widgets", widgets: [...mount.widgets], collapsedWidgetKeys: collapsed };
+  }
   if (mount.statuses?.length) return { kind: "statuses", statuses: [...mount.statuses] };
   if (mount.custom) return { kind: "custom", requestId: mount.custom.requestId };
   return { kind: "empty" };
@@ -113,12 +128,13 @@ export function floatContentMessage(input: {
   slot: ExtensionPresentationSlot;
   mount: PresentationSlotMount;
   chrome: FloatChrome;
+  collapsedWidgetKeys?: Readonly<Record<string, true>>;
 }): FloatContentMessage {
   return {
     slotId: input.slot.slotId,
     family: input.slot.family,
     chrome: input.chrome,
-    body: floatContentBody(input.mount),
+    body: floatContentBody(input.mount, input.collapsedWidgetKeys),
   };
 }
 
@@ -154,6 +170,11 @@ export function isLiveFloatWidgetAction(
         row.actions.some((action) => action.id === actionId && action.disabled !== true),
     ) === true
   );
+}
+
+/** A detached window may collapse only a widget it is currently drawing. */
+export function isLiveFloatWidgetKey(mount: PresentationSlotMount, key: string): boolean {
+  return mount.widgets?.some((widget) => (widget.storageKey ?? widget.key) === key) === true;
 }
 
 /** Retain the newest output only; an unread stream must not grow without bound. */

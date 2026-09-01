@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
 import {
   closeContextMenu,
   subscribeContextMenu,
@@ -17,6 +18,7 @@ export function MenuHost() {
 function Menu({ request }: { request: ContextMenuRequest }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: request.x, top: request.y });
+  const compact = request.density === "compact";
 
   const close = useCallback(
     (restoreFocus = true) => {
@@ -88,7 +90,10 @@ function Menu({ request }: { request: ContextMenuRequest }) {
       ref={menuRef}
       role="menu"
       data-context-menu
-      className="theme-floating-surface fixed z-50 max-h-[calc(100vh-16px)] min-w-48 max-w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-xl"
+      data-menu-density={compact ? "compact" : "default"}
+      className={`theme-floating-surface fixed z-50 max-h-[calc(100vh-16px)] overflow-y-auto rounded-md border border-border bg-surface-raised shadow-xl ${
+        compact ? "min-w-36 max-w-56 p-0.5" : "min-w-48 max-w-72 p-1"
+      }`}
       style={position}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -111,12 +116,17 @@ function Menu({ request }: { request: ContextMenuRequest }) {
         const Icon = item.icon;
         return (
           <div key={item.id}>
-            {item.separatorBefore && <div className="my-1 border-t border-border" />}
+            {item.separatorBefore && (
+              <div className={`${compact ? "my-0.5" : "my-1"} border-t border-border`} />
+            )}
             <button
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              className={`flex min-h-8 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs outline-none transition-colors hover:bg-control-hover focus-visible:bg-control-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-40 ${
+              aria-current={item.selected ? "true" : undefined}
+              className={`flex w-full items-center rounded text-left text-xs outline-none transition-colors hover:bg-control-hover focus-visible:bg-control-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:cursor-default ${
+                compact ? "min-h-7 gap-1.5 px-1.5 py-1" : "min-h-8 gap-2 px-2 py-1.5"
+              } ${item.selected ? "bg-control-hover text-foreground" : ""} disabled:opacity-50 ${
                 item.danger ? "text-danger" : "text-foreground"
               }`}
               onClick={() => {
@@ -125,11 +135,12 @@ function Menu({ request }: { request: ContextMenuRequest }) {
               }}
             >
               {Icon ? (
-                <Icon size={14} className="shrink-0" aria-hidden="true" />
+                <Icon size={compact ? 13 : 14} className="shrink-0" aria-hidden="true" />
               ) : (
-                <span className="w-3.5" />
+                <span className={compact ? "w-[13px]" : "w-3.5"} />
               )}
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {item.selected && <Check size={13} className="shrink-0" aria-hidden="true" />}
               {item.chordHint && (
                 <kbd className="shrink-0 font-mono text-[10px] text-muted">{item.chordHint}</kbd>
               )}

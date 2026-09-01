@@ -627,10 +627,12 @@ describe("RightDock extension-deck-v1", () => {
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: "pi-subagents Status" }));
     expect(screen.getByRole("menuitem", { name: "Above composer" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitem", { name: "Extensions Dock · secondary" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Extensions Dock · primary" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Dock · secondary" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Dock · primary" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Dock · primary" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
     expect(screen.queryByRole("menuitem", { name: "Hidden" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Floating panel" })).toBeNull();
   });

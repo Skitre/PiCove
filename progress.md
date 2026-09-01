@@ -817,6 +817,107 @@
   (Desktop 139 files / 938 tests, Pi Host 82 / 761, Protocol 6 / 534).
 - All four phases (quickfix, A, B, C) of the Extension Deck UI polish plan are
   now complete.
+# Session: 2026-09-01 Detached Float resize diagnosis
+
+- **Status:** diagnosis complete at high confidence; no product code changed.
+- Reproduced user context against the running Tauri development build and
+  narrowed the closing path to detached window reconciliation or an unexpected
+  `setPlacement` intent.
+- Static inspection established that geometry writes are serialized and cannot
+  directly create an `anchor/aboveComposer` home.
+- Engaged the computer-use inspection workflow to observe the running PiDeck
+  window and reproduce the resize path without editing product code.
+- Computer-use was unavailable after startup: `orca open --json` reported the
+  app running, but both capabilities and app enumeration returned
+  `runtime_unavailable` because `orca-runtime.json` was absent. Per the tool's
+  safety guide, stopped UI automation instead of guessing another command or
+  executable; continued with source and persisted-state evidence.
+- Started a read-only watcher on the active native settings file. The clean
+  reproduction identified the resized Float as
+  `ext_d2b2c6475cf26b2e41d3925f` (`@juicesharp/rpiv-todo`), not the separate
+  `pi-plan-mode` anchor used as the initial baseline.
+- Captured 17 successful geometry commits from 19:54:18 through 19:55:39.
+  Every snapshot remained `kind=float` with a valid detached placement on
+  `Monitor #41039`; width/height and x/y followed the user's edge drags. No
+  `setPlacement`, Undo, sanitizer fallback, or anchor write occurred.
+- Preliminary direct cause for the native window disappearing: the 2-second
+  monitor poll accepts a successful empty monitor vector as real topology loss,
+  and reconciliation immediately removes/closes the Float. This is strongly
+  timing-consistent. The clean negative reproduction rules out the resize
+  persistence path itself; the remaining intermittent path is transient monitor
+  enumeration, which intentionally performs no profile write and therefore can
+  make the UI appear attached while the saved detached preference survives.
+- Fix direction recorded but not implemented: treat an isolated successful
+  empty monitor vector as transient while a detached window is live (retain the
+  last non-empty topology and require repeated confirmation or a platform
+  topology signal before closing windows).
+- Planning update initially failed because the plan title was
+  `Extension Deck V2 — detached floats and structured widgets`, not the stale
+  title used in the patch context. No file changed; reread the actual heading
+  and applied the update with exact context.
+
+# Session: 2026-09-01 Detached widget collapse parity
+
+- **Status:** investigation in progress.
+- User reports that widget-list content in an independent Extension window
+  cannot be collapsed, unlike the equivalent in-window presentation.
+- Scope: restore control/state parity without changing placement or native
+  window behavior.
+- Root cause confirmed: the existing detached disclosure targets an isolated
+  store action that rejects forwarded widget keys, making every click a no-op.
+- Investigation command error: an `rg` with no matches exited nonzero before a
+  chained `sed` could run. Reran the searches as independent commands and read
+  the channel tests successfully; no files were changed by the failed command.
+- Implemented main-owned collapse parity: the Float sends a validated
+  `toggleWidgetCollapsed` intent; content messages include only that Float's
+  collapsed keys; the shared rows accept controlled state in the detached root.
+- Added coverage for controlled disclosure rendering, intent emission,
+  collapsed-state content deltas, and rejection of non-live widget keys.
+- Focused verification passed: 3 files, 33 tests; Desktop typecheck passed.
+- Live-operation note: the first placement-button click used an element index
+  that became stale and Orca rejected it with `element_not_found`; refreshed
+  state and used a newly parsed semantic index. No action occurred on the
+  rejected click.
+- Live PiDeck verification passed in the real 360×240 `rpiv-todos` detached
+  window: collapse removed both content rows and changed the accessible control
+  to Expand; expand restored them. Reattached the widget above Composer and
+  confirmed the original expanded state and content.
+- **Status:** complete.
+- Final verification passed: Desktop typecheck, ESLint, targeted formatting,
+  and full suite (147 files, 1031 tests). Final UI checklist found no new visual
+  primitive: the existing semantic disclosure retains its focus ring,
+  localized label, `aria-expanded`/`aria-controls`, and reduced-motion behavior.
+
+# Session: 2026-09-01 Anchor placement-control polish
+
+- **Status:** complete.
+- User-approved scope: remove drag controls from above/below Composer Extension
+  surfaces and replace the oversized placement chooser with one compact layout
+  menu.
+- UI/UX guidance: use progressive disclosure without hover-only access, keep a
+  visible keyboard focus state, use semantic button/menu primitives and the
+  existing Lucide outline family, and eliminate overlapping drag/click gestures.
+- Removed the anchor-origin grip and drag lifecycle while retaining Float
+  title-bar dragging and anchor drop targets for Float moves.
+- Added a placement-only compact menu density, destination icons, short Dock /
+  own-window labels, and a checked disabled row for the current placement.
+- Focused DOM verification: Menu, Extension Presentation, and Extension Dock —
+  43/43 tests passed. The first invocation used workspace-relative paths after
+  filtering to the Desktop package and found no tests; reran with package-relative
+  `src/...` paths successfully.
+- Desktop visual QA could not proceed: Orca started once, exited immediately,
+  and subsequent computer-use capability/list-app calls returned
+  `runtime_unavailable` because its runtime metadata was absent. No screenshot
+  was treated as evidence.
+- After the user confirmed the Orca launch was expected, restarted it and
+  completed visual QA in the live 1280×800 PiDeck development window. The two
+  anchor rows each expose one subtle right-side placement button and no grip;
+  the Chinese menu is compact, fully visible, icon-aligned, and marks the
+  current placement with a disabled row and trailing check. Opened and closed
+  the menu without selecting a destination.
+- Final Desktop verification: typecheck, ESLint, formatting, and the full suite
+  all passed (147 files, 1026 tests).
+
 # Session: 2026-08-30 Extension Deck V2 structured widgets
 
 ## Phase 7a: Structured payload contract

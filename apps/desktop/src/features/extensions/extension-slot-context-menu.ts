@@ -1,4 +1,14 @@
 import type { PresentationHome } from "@pideck/protocol";
+import {
+  ArrowDown,
+  ArrowUp,
+  ExternalLink,
+  EyeOff,
+  PanelRightClose,
+  PanelRightOpen,
+  RotateCcw,
+  type LucideIcon,
+} from "lucide-react";
 import { contextMenuTrigger, openContextMenu, type MenuItem } from "../../lib/context-menu";
 import {
   canonicalExtensionUiSettings,
@@ -14,6 +24,7 @@ import {
   FAMILY_PRESENTATION_CHOICES,
   presentationChoiceFromHome,
   presentationHomeFromChoice,
+  type ExtensionUiPresentationChoice,
 } from "../../lib/extension-ui-presentation";
 import { commitExtensionPresentationHome } from "../../lib/extension-ui-profile";
 import { detachedHomeForViewportRect, type ViewportRect } from "../../lib/extension-float-detach";
@@ -22,6 +33,28 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { canCreateLiveExtensionFloat } from "../../lib/extension-ui-live-slots";
 
 export type ExtensionSlotMenuFamily = "widget" | "status" | "custom";
+
+const PLACEMENT_ICONS: Partial<Record<ExtensionUiPresentationChoice, LucideIcon>> = {
+  followExtension: RotateCcw,
+  aboveComposer: ArrowUp,
+  belowComposer: ArrowDown,
+  dockPrimary: PanelRightOpen,
+  dockSecondary: PanelRightClose,
+  hidden: EyeOff,
+};
+
+function compactPlacementLabel(choice: ExtensionUiPresentationChoice, t: Translate): string {
+  switch (choice) {
+    case "followExtension":
+      return t("extensionUiPlacementDefault");
+    case "dockPrimary":
+      return t("extensionUiPlacementDockPrimary");
+    case "dockSecondary":
+      return t("extensionUiPlacementDockSecondary");
+    default:
+      return t(extensionUiChoiceMessageKey(choice));
+  }
+}
 
 /**
  * Open the legal-destinations context menu for one Extension presentation slot.
@@ -49,7 +82,6 @@ export function openExtensionSlotContextMenu(input: {
   const currentChoice = presentationChoiceFromHome(family, currentHome);
   const items: MenuItem[] = [];
   for (const choice of FAMILY_PRESENTATION_CHOICES[family]) {
-    if (choice === currentChoice) continue;
     if (choice === "hidden" && family !== "widget") continue;
     // A float is its own OS window now. `detachItems` offers that destination;
     // the in-window layer is only where a float lands when no window can be
@@ -58,7 +90,10 @@ export function openExtensionSlotContextMenu(input: {
     const home = presentationHomeFromChoice(family, choice, settings, currentHome);
     items.push({
       id: `extension-home-${choice}`,
-      label: t(extensionUiChoiceMessageKey(choice)),
+      label: compactPlacementLabel(choice, t),
+      icon: PLACEMENT_ICONS[choice],
+      selected: choice === currentChoice,
+      disabled: choice === currentChoice,
       onSelect: () => {
         void commitExtensionPresentationHome({
           extensionId,
@@ -73,6 +108,7 @@ export function openExtensionSlotContextMenu(input: {
     x: input.event.clientX,
     y: input.event.clientY,
     trigger: contextMenuTrigger(input.event.target),
+    density: "compact",
     items: [...items, ...detachItems(input, settings, name, familyLabel)],
   });
 }
@@ -100,7 +136,9 @@ function detachItems(
   return [
     {
       id: "extension-home-detach",
-      label: t("extensionUiFloatDetach", { name, family: familyLabel }),
+      label: t("extensionUiHomeFloat"),
+      icon: ExternalLink,
+      separatorBefore: true,
       onSelect: () => {
         void (async () => {
           const asFloat = presentationHomeFromChoice(family, "float", settings, currentHome);
