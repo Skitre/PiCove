@@ -12,7 +12,7 @@ import type {
 } from "@pideck/protocol";
 import { hostClient } from "../../lib/bridge/host-client";
 import { useAppStore } from "../../lib/stores/app-store";
-import { ModelControls } from "./ModelControls";
+import { ModelControls, ThinkingLevelControl } from "./ModelControls";
 
 const HOST_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
@@ -101,7 +101,7 @@ function envelope(method: string, result: unknown): HostResponseEnvelope {
   } as HostResponseEnvelope;
 }
 
-describe("ModelControls model menu resizing", () => {
+describe("Model controls", () => {
   const initialInnerWidth = window.innerWidth;
 
   beforeEach(() => {
@@ -117,6 +117,7 @@ describe("ModelControls model menu resizing", () => {
     useAppStore.getState().setHost(host());
     useAppStore.getState().setWorkspace(workspace());
     useAppStore.getState().applySessionSnapshot(session());
+    useAppStore.getState().setThinkingLevels([]);
   });
 
   afterEach(() => {
@@ -130,6 +131,7 @@ describe("ModelControls model menu resizing", () => {
     useAppStore.getState().setHost(null);
     useAppStore.getState().setWorkspace(null);
     useAppStore.getState().applySessionSnapshot(null);
+    useAppStore.getState().setThinkingLevels([]);
   });
 
   it("keeps the measured default and widens from the fixed left edge", async () => {
@@ -179,5 +181,60 @@ describe("ModelControls model menu resizing", () => {
     expect(menuShell).toHaveStyle({ width: "440px" });
     fireEvent.pointerUp(resizeHandle, { pointerId: 7 });
     expect(resizeHandle.releasePointerCapture).toHaveBeenCalledWith(7);
+  });
+
+  it("shows English levels in a Chinese UI and changes the current level directly", async () => {
+    useAppStore.getState().setDesktopSettings({
+      theme: "system",
+      language: "zh",
+      restoreLastSession: true,
+      autoRestartHostOnce: true,
+      extensionDecisionPresentation: "legacy-modal",
+      terminalProfile: "auto",
+    });
+    useAppStore.getState().setThinkingLevels(["off", "low", "high", "max"]);
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.setThinkingLevel") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, { ...session(), thinkingLevel: "high" }) as never;
+    });
+    const user = userEvent.setup();
+    render(<ThinkingLevelControl />);
+
+    const trigger = screen.getByRole("button", { name: "思考强度，当前 Off" });
+    expect(trigger).toHaveTextContent("Off");
+    await user.click(trigger);
+
+    const currentItem = screen.getByRole("menuitemradio", { name: "Off" });
+    expect(currentItem).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(currentItem).toHaveFocus());
+    await user.click(screen.getByRole("menuitemradio", { name: "High" }));
+
+    expect(hostClient.request).toHaveBeenCalledWith("model.setThinkingLevel", expect.anything(), {
+      level: "high",
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "思考强度，当前 High" })).toHaveTextContent("High"),
+    );
+  });
+
+  it("returns focus to the trigger on Escape", async () => {
+    useAppStore.getState().setThinkingLevels(["off", "high"]);
+    const user = userEvent.setup();
+    render(<ThinkingLevelControl />);
+
+    const trigger = screen.getByRole("button", { name: "Thinking level, currently Off" });
+    await user.click(trigger);
+    await waitFor(() => expect(screen.getByRole("menuitemradio", { name: "Off" })).toHaveFocus());
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("stays hidden when the current model has no level choice", () => {
+    useAppStore.getState().setThinkingLevels(["off"]);
+    const { container } = render(<ThinkingLevelControl />);
+
+    expect(container.querySelector("[data-composer-thinking-control]")).not.toBeInTheDocument();
   });
 });

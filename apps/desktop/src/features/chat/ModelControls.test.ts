@@ -69,14 +69,9 @@ describe("model menu resize geometry", () => {
 
 describe("thinkingLevelLabel", () => {
   it("keeps model thinking levels in English", () => {
-    expect(["off", "minimal", "low", "medium", "high", "xhigh"].map(thinkingLevelLabel)).toEqual([
-      "Off",
-      "Minimal",
-      "Low",
-      "Medium",
-      "High",
-      "Extra high",
-    ]);
+    expect(
+      ["off", "minimal", "low", "medium", "high", "max", "xhigh"].map(thinkingLevelLabel),
+    ).toEqual(["Off", "Minimal", "Low", "Medium", "High", "Max", "Extra high"]);
     expect(thinkingLevelLabel("provider-specific")).toBe("provider-specific");
   });
 });

@@ -92,6 +92,7 @@ export function thinkingLevelLabel(level: string): string {
     low: "Low",
     medium: "Medium",
     high: "High",
+    max: "Max",
     xhigh: "Extra high",
   } as const;
   return level in labels ? labels[level as keyof typeof labels] : level;
@@ -113,6 +114,30 @@ export function canRequestModelList(args: {
     !args.rehydrating &&
     !args.desynchronized
   );
+}
+
+async function setCurrentThinkingLevel(level: string, failureMessage: string): Promise<boolean> {
+  const current = useAppStore.getState();
+  if (!current.host || !current.workspace || !current.session) return false;
+  const generation = captureRequestGeneration(current.host);
+  const res = await hostClient.request(
+    "model.setThinkingLevel",
+    activeSessionContext(current.host, current.workspace, current.session),
+    { level },
+  );
+  if (
+    !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
+      session: true,
+    })
+  ) {
+    return false;
+  }
+  if (res.ok) {
+    useAppStore.getState().applySessionSnapshot(res.result);
+    return true;
+  }
+  useAppStore.getState().pushNotification(res.error?.message ?? failureMessage, "error");
+  return false;
 }
 
 export function ContextUsageRing() {
@@ -241,6 +266,130 @@ export function ContextUsageRing() {
         </div>
       )}
     </span>
+  );
+}
+
+/** Direct current-model thinking control for the composer's send cluster. */
+export function ThinkingLevelControl() {
+  const t = useT();
+  const session = useAppStore((state) => state.session);
+  const thinkingLevels = useAppStore((state) => state.thinkingLevels);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const levels = [...new Set(thinkingLevels)];
+  const currentLevel = session?.thinkingLevel ?? "off";
+  const currentLabel = thinkingLevelLabel(currentLevel);
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => {
+      menuRef.current
+        ?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
+        ?.focus();
+    });
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  if (!session?.model || levels.length < 2) return null;
+
+  const accessibleLabel = t("modelCurrentThinkingLevel", { level: currentLabel });
+
+  const selectLevel = async (level: string) => {
+    if (pending || level === currentLevel) {
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    setPending(true);
+    try {
+      const changed = await setCurrentThinkingLevel(level, t("modelThinkingSetFailed"));
+      if (changed) {
+        setOpen(false);
+        requestAnimationFrame(() => triggerRef.current?.focus());
+      }
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative flex shrink-0 items-center"
+      data-composer-thinking-control
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        className="flex h-7 cursor-pointer items-center gap-1 text-[11px] text-muted outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-default disabled:opacity-40"
+        aria-label={accessibleLabel}
+        title={accessibleLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={pending}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{currentLabel}</span>
+        <ChevronDown
+          aria-hidden="true"
+          size={11}
+          className={`shrink-0 transition-transform motion-reduce:transition-none ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={accessibleLabel}
+          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-28 overflow-hidden rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
+        >
+          {levels.map((level) => {
+            const active = level === currentLevel;
+            return (
+              <button
+                key={level}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                aria-busy={pending || undefined}
+                disabled={pending}
+                className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:opacity-50 ${
+                  active
+                    ? "bg-accent/15 text-accent"
+                    : "text-muted hover:bg-surface-overlay hover:text-foreground"
+                }`}
+                onClick={() => void selectLevel(level)}
+              >
+                <span className="flex size-3 shrink-0 items-center justify-center">
+                  {active && <Check size={11} aria-hidden="true" />}
+                </span>
+                {thinkingLevelLabel(level)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -478,28 +627,10 @@ export function ModelControls() {
     if (selected?.provider !== model.provider || selected.modelId !== model.modelId) {
       if (!(await setModel(model.provider, model.modelId))) return;
     }
-    const current = useAppStore.getState();
-    if (!current.host || !current.workspace || !current.session) return;
-    const generation = captureRequestGeneration(current.host);
-    const res = await hostClient.request(
-      "model.setThinkingLevel",
-      activeSessionContext(current.host, current.workspace, current.session),
-      { level },
-    );
-    if (
-      !isCurrentRequestGeneration(useAppStore.getState().host, generation, {
-        session: true,
-      })
-    ) {
-      return;
-    }
-    if (res.ok) {
-      setSession(res.result);
+    if (await setCurrentThinkingLevel(level, t("modelThinkingSetFailed"))) {
       setMenuOpen(false);
       setThinkingModelKey(null);
-      return;
     }
-    pushNotification(res.error?.message ?? t("modelThinkingSetFailed"), "error");
   }
 
   function resizeModelMenu(width: number) {

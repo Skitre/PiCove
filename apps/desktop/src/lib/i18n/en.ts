@@ -898,6 +898,7 @@ export const en = {
   modelMenuLabel: "Models",
   modelMenuResize: "Resize model menu",
   modelThinkingFor: "Thinking level for {model}",
+  modelCurrentThinkingLevel: "Thinking level, currently {level}",
   modelNoThinkingLevels: "No levels",
   modelThinkingOff: "Off",
   modelThinkingMinimal: "Minimal",

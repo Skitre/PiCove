@@ -867,6 +867,7 @@ export const zh: Record<MessageKey, string> = {
   modelMenuLabel: "模型",
   modelMenuResize: "调整模型菜单宽度",
   modelThinkingFor: "设置 {model} 的思考级别",
+  modelCurrentThinkingLevel: "思考强度，当前 {level}",
   modelNoThinkingLevels: "没有可用级别",
   modelThinkingOff: "关闭",
   modelThinkingMinimal: "最少",

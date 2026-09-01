@@ -856,6 +856,32 @@
   title used in the patch context. No file changed; reread the actual heading
   and applied the update with exact context.
 
+# Session: 2026-09-01 Direct Composer thinking control
+
+- **Status:** complete; changes remain uncommitted for user review.
+- User-approved shape: English current-level text only, no brain icon and no
+  “Thinking:” prefix, placed directly left of the context usage ring.
+- Implemented the direct current-model control immediately before the context
+  ring. It opens upward, marks and focuses the current value, restores focus on
+  Escape, and hides when fewer than two distinct levels are available.
+- Factored the guarded `model.setThinkingLevel` request into one path shared by
+  the existing per-model submenu and the new direct control.
+- Focused verification passed: Desktop typecheck and 19 tests across model
+  controls and context-ring behavior.
+- UI reference lookup note: the first `rg` validation lookup parsed a pattern
+  beginning with `--domain` as an option and exited without searching. No file
+  changed; rerun it with the `--` option terminator.
+- UI validation command note: the documented command uses `python`, which is
+  not installed on this machine. No file changed; use the available `python3`
+  executable for the same local search script.
+- Live PiDeck QA at 1280×800 passed. The 11px `Max` label is balanced beside the
+  context ring, the four-row menu is compact and focuses the selected row, and
+  a `Max → High → Max` round trip updated immediately and restored the original
+  setting.
+- Final verification passed: Desktop typecheck; focused 19 tests; full Desktop
+  147 files / 1034 tests; Desktop ESLint; targeted Prettier check; and
+  `git diff --check`.
+
 # Session: 2026-09-01 Detached widget collapse parity
 
 - **Status:** investigation in progress.

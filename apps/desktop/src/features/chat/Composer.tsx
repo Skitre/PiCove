@@ -30,7 +30,7 @@ import {
   type SerializableImage,
 } from "@pideck/protocol";
 import { buildAttachedFileBlock } from "./transcript-model";
-import { ContextUsageRing, ModelControls } from "./ModelControls";
+import { ContextUsageRing, ModelControls, ThinkingLevelControl } from "./ModelControls";
 import { QueuePanel } from "./QueuePanel";
 import {
   ExtensionAnchorSlots,
@@ -1600,6 +1600,7 @@ export function Composer({
             </button>
             <ModelControls />
             <div className="ml-auto flex items-center gap-1.5">
+              <ThinkingLevelControl />
               <ContextUsageRing />
               {busy ? (
                 canSend ? (

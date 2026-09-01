@@ -1,3 +1,50 @@
+# Direct thinking-control findings (2026-09-01)
+
+- The live session can report `max`; map it to the polished English label `Max`
+  instead of exposing the raw lowercase provider value.
+- Implementation inspection confirms the control sits immediately before
+  `ContextUsageRing`, reuses the guarded session request path, and preserves the
+  existing nested per-model thinking menu.
+- Final desktop UI rules favor exactly this shape: direct click access rather
+  than hover-only discovery, an explicit accessible name, keyboard navigation,
+  visible focus, disabled semantics while loading, no color-only state, and
+  transform-only motion with a reduced-motion override.
+- User requested a quieter visual hierarchy after the first implementation;
+  use 11px for both the persistent value and menu rows, with an 11px chevron.
+- Computer-use resolution for live QA: no managed CLI override is present on
+  this macOS session, so the version-matched executable is `/usr/local/bin/orca`.
+- Live 1280×800 visual inspection confirms `Max` appears immediately left of
+  the 5% context ring, aligns with the model row, remains readable at 11px, and
+  has enough separation from both the ring and send button without widening the
+  Composer chrome noticeably.
+- The live menu opens upward from the label at a compact 112px minimum width,
+  fits four 28px rows without empty padding, stays clear of the context ring,
+  and exposes `Off / Low / High / Max` with a visible check plus semantic
+  selected state; focus lands on the active `Max` row as designed.
+- Live mutation verification succeeded: selecting `High` immediately updated
+  the direct label and closed the menu, then selecting `Max` restored the user's
+  original setting; focus returned to the trigger after each request.
+
+- Composer currently places attachments + model on the left, then context ring
+  + send on the right. The requested control belongs immediately before the
+  context ring so it reads as a per-send parameter without crowding the model
+  label.
+- The existing model menu already owns the authoritative level list, guarded
+  `model.setThinkingLevel` request, current-session update, and error toast.
+  The direct control should reuse those semantics for the active model rather
+  than introduce cycling or optimistic state.
+- Visible copy should remain canonical English (`Off`, `Low`, `Medium`, etc.)
+  under every locale; only the full accessible name should be localized.
+- The store's `thinkingLevels` is refreshed with `model.list` and after model
+  switches, so a separate current-model control can consume it without another
+  Host request. Hide the control unless there are at least two distinct levels.
+- Factor the guarded `model.setThinkingLevel` request into one helper shared by
+  the existing per-model submenu and the new direct control. This avoids two
+  subtly different generation/race/error paths.
+- The direct menu should open upward and right-aligned, focus the current level,
+  support Escape/outside dismissal, disable during the request, and keep the
+  visible labels English even under Chinese locale.
+
 # Detached widget collapse parity findings (2026-09-01)
 
 - The detached root does render the shared disclosure button. The failure is
