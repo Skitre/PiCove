@@ -108,6 +108,7 @@ pub struct DesktopSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_dir: Option<String>,
     pub auto_restart_host_once: bool,
+    pub system_notifications_enabled: bool,
     pub busy_send_behavior: BusySendBehavior,
     #[serde(default = "legacy_extension_decision_presentation")]
     pub extension_decision_presentation: ExtensionDecisionPresentation,
@@ -137,6 +138,7 @@ impl Default for DesktopSettings {
             last_session_path: None,
             agent_dir: None,
             auto_restart_host_once: true,
+            system_notifications_enabled: true,
             busy_send_behavior: BusySendBehavior::FollowUp,
             extension_decision_presentation: ExtensionDecisionPresentation::Auto,
             terminal_profile: TerminalProfileId::Auto,
@@ -405,6 +407,7 @@ impl DesktopSettingsStore {
                     | "lastSessionPath"
                     | "agentDir"
                     | "autoRestartHostOnce"
+                    | "systemNotificationsEnabled"
                     | "busySendBehavior"
                     | "extensionDecisionPresentation"
                     | "terminalProfile"

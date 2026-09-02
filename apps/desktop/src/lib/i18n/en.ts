@@ -159,6 +159,9 @@ export const en = {
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
+  generalSystemNotifications: "System notifications",
+  generalSystemNotificationsDesc:
+    "Notify you when PiDeck needs attention while its windows are not focused.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "What happens when you send another message during a turn.",
@@ -1215,6 +1218,11 @@ export const en = {
   notifCenterClearAll: "Clear all",
   notifCenterDismiss: "Dismiss notification",
   notifCenterDismissPreview: "Dismiss notification preview",
+  systemNotificationTitle: "PiDeck",
+  systemNotificationReady: "A response is ready",
+  systemNotificationInput: "Input is needed",
+  systemNotificationFailed: "A session failed",
+  systemNotificationHostUnavailable: "PiDeck needs attention",
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -77,6 +77,7 @@ export type FloatIntent =
    * already decided it does not need to re-send.
    */
   | { kind: "hello"; slotId: string }
+  | { kind: "focus"; slotId: string; focused: boolean }
   | { kind: "close"; slotId: string }
   | { kind: "togglePin"; slotId: string }
   /** The user moved or resized the window; the main window persists it. */

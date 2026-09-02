@@ -353,6 +353,13 @@ export function ExtensionFloatWindowController() {
           lastContent.current.delete(intent.slotId);
           rerender((value) => value + 1);
           return;
+        case "focus":
+          window.dispatchEvent(
+            new CustomEvent("pideck:float-focus", {
+              detail: { slotId: intent.slotId, focused: intent.focused },
+            }),
+          );
+          return;
         case "close":
           if (mount.custom) {
             const panel = useAppStore.getState().extensionTerminal;

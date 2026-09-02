@@ -1,3 +1,80 @@
+# Native system-notification planning findings (2026-09-01)
+
+- Current behavior is entirely in-window: `NotificationCenter` renders a bell,
+  retained list, unread badge, and six-second React toast stack.
+- PiDeck has neither the Rust nor JavaScript Tauri notification dependency,
+  does not initialize the plugin, and grants no notification capability.
+- The design must start from attention-worthy domain events rather than mirror
+  all app notifications; the existing store includes routine success/info
+  messages that would become noisy as OS alerts.
+- Official Tauri v2 notification support covers macOS and Windows. Permission
+  must be checked/requested before sending; Windows notification identity is
+  only trustworthy in an installed build and may appear as PowerShell in dev.
+- `agent.event` already carries `runId`, concrete workspace/session identity,
+  and normalized lifecycle types including `agent_end`, `agent_settled`,
+  `error`, compaction, and retry events. This is a stronger trigger source than
+  observing Zustand `isIdle` transitions, which can also represent compaction,
+  recovery, aborts, or snapshot replacement.
+- The Host emits `agent_end` before final lifecycle snapshot publication and
+  may later emit `agent_settled`; background runtimes are retained and also
+  publish identity-scoped agent events. Completion deduplication therefore
+  needs a key such as `hostInstanceId + workspaceId + sessionId + runId`, and a
+  defined terminal event (`agent_end` unless it advertises a retry, otherwise
+  the eventual terminal event).
+- The current Desktop error branch already derives a safe failure message from
+  `agent.event.type === error` and inserts an in-app notification. Native errors
+  should hook the same semantic event while retaining the in-app record.
+- Desktop identity policy intentionally accepts `agent.event`,
+  `session.runtimeChanged`, and `extensionUi.request` from non-active sessions
+  as long as the Host generation matches. Native notification routing can
+  therefore cover background sessions without weakening validation.
+- `extensionUi.request` is the existing typed “needs user input” signal. It has
+  request/session identity, kind, safe title/message fields, timeout, risk,
+  origin, and already classifies delivery as active/background/candidate. It is
+  the correct second notification seam; generic widget-attention or arbitrary
+  Extension notification events should not automatically become OS alerts.
+- No app-wide foreground-state service exists. Draft persistence uses DOM
+  `visibilitychange`; transcript following uses window focus/blur; neither is a
+  durable notification policy. Add one main-window attention-state controller
+  combining Tauri window focus/visibility with `document.visibilityState`, and
+  treat “unknown” conservatively as foreground during startup/tests.
+- `session.runtimeChanged` provides catalog state for background sessions but
+  has no `runId`. Use it for navigation/status refresh only, not completion
+  deduplication.
+- The SDK's `AgentSessionEvent` contract confirms `agent_end` includes
+  `messages` and `willRetry`, while `agent_settled` is payload-free and emitted
+  in the run-finally path. The notification classifier should inspect the
+  terminal assistant `stopReason` for `aborted`/`error` and use `willRetry` to
+  defer until the final retry.
+- Tauri's notification API exposes `isPermissionGranted`, `requestPermission`,
+  `sendNotification`, and `onAction`; options support `extra`, `autoCancel`,
+  `group`, and `tag`. The plan only needs the first three plus `onAction` and
+  opaque `extra` routing metadata. Native support is documented for both
+  macOS and Windows, with Windows installed-build identity caveats.
+- Detached Floats currently have a thin-client channel but no focus relay. A
+  focused Float must emit a small focus-state intent (or Rust window manager
+  event) to the main window so native-alert suppression reflects the whole
+  PiDeck window set.
+- Implemented the Float focus relay as a typed `focus` intent over the existing
+  thin-client channel; the main controller publishes a browser event consumed
+  by the app-level notification attention state.
+- Desktop settings use versioned Rust serde defaults plus a TypeScript patch
+  allowlist. Adding one boolean is a backward-compatible migration, but it
+  requires updates to both validators, defaults, settings UI, and settings
+  fixtures.
+- The existing i18n layer has explicit `en`, `zh`, and `system` resolution, so
+  native notification copy should be generated at the Desktop boundary using
+  the same resolver. The plugin receives already-localized strings; it should
+  never own translation or fall back silently to English.
+- Bilingual coverage must include OS-facing strings as well as React UI:
+  notification title/body, General Settings label/description, permission
+  denial/unavailable fallback, stale-session click result, and Host recovery
+  destination. Tests should switch the store language and assert both exact
+  localized payloads.
+- The implementation keeps OS bodies generic and localized at send time, while
+  the notification `extra` carries only validated routing metadata. English and
+  Chinese classifier copy plus Chinese General Settings coverage are now tested.
+
 # Direct thinking-control findings (2026-09-01)
 
 - The live session can report `max`; map it to the polished English label `Max`

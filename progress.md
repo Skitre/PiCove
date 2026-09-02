@@ -856,6 +856,38 @@
   title used in the patch context. No file changed; reread the actual heading
   and applied the update with exact context.
 
+# Session: 2026-09-01 Native system-notification planning
+
+- **Status:** implementation in progress; user approved the four decision gates.
+- Selected `planning-with-files` to keep the cross-platform design and evidence
+  persistent, and `ui-ux-pro-max` to constrain interruption, accessibility, and
+  settings behavior.
+- Initialized a six-phase plan covering event semantics, UX policy, native
+  integration, click routing, validation, rollout, and decision gates.
+- Architecture pass in progress: identified normalized `agent.event` lifecycle
+  events as the authoritative notification seam and ruled out generic store
+  notifications / `isIdle` observation as completion triggers.
+- Confirmed background event acceptance and selected `extensionUi.request` as
+  the typed attention-required seam. Identified the need for a new centralized
+  main-window focus/visibility tracker; no equivalent policy service exists.
+- Developer app restarted successfully from the current checkout via
+  `pnpm --filter @pideck/desktop tauri:dev`: Vite is serving
+  `http://127.0.0.1:1420/`, Tauri compiled the Rust shell, and Pi Host reached
+  ready with ten user extensions loaded.
+- Completed the design pass. The proposed V1 is a default-on global toggle
+  with lazy permission, generic visible copy, target metadata in `extra`,
+  click-to-open routing, and notifications only for background completion,
+  failure, input-required, and Host-fatal attention.
+- Plan-only decision gates are now recorded in `task_plan.md`; implementation
+  should wait for approval of the default, event set, privacy payload, and
+  Float-focus policy.
+- User clarification added: bilingual delivery is a hard requirement. The plan
+  now requires English and Chinese for all system-facing and fallback copy, with
+  `system` language following the existing OS-locale resolver.
+- Implementation started: dependencies, settings, event classifier, native
+  notification bridge, Float-focus relay, click routing, and bilingual tests
+  are the active work packages.
+
 # Session: 2026-09-01 Direct Composer thinking control
 
 - **Status:** complete; changes remain uncommitted for user review.
@@ -881,6 +913,39 @@
 - Final verification passed: Desktop typecheck; focused 19 tests; full Desktop
   147 files / 1034 tests; Desktop ESLint; targeted Prettier check; and
   `git diff --check`.
+
+# Session: 2026-09-02 Native system notification implementation
+
+- **Status:** implementation in progress; live platform delivery remains open.
+- Added Tauri notification plugin (Rust + JS), initialized it for the main
+  window, and granted only permission-check/request/notify/listener capabilities;
+  detached Float capabilities remain notification-free.
+- Added backward-compatible `systemNotificationsEnabled` settings field with
+  default-on Rust/TypeScript handling and bilingual General Settings toggle.
+- Added `SystemNotificationTracker` and `SystemNotificationController`: event
+  classification for background response-ready, failure, input-required, and
+  Host-fatal attention; run/request/fatal dedupe; retry/abort suppression;
+  lazy permission request; localized title/body; safe opaque click metadata;
+  and no-op fallback when native permission/API is unavailable.
+- Added main-window and detached-Float focus relays, plus notification click
+  routing through the existing workspace/session Host request paths. Background
+  targets use the target session's own cwd rather than the active workspace cwd.
+- Verification passed: Protocol 577 tests; Desktop focused 23 tests; Desktop
+  typecheck/lint/Prettier; Rust `cargo test --lib` 101 tests; and full Desktop
+  suite 148 files / 1043 tests after the final regression cases.
+- Live developer app restarted successfully after the native plugin rebuild;
+  Tauri and Pi Host reached ready. macOS Notification Center permission and
+  delivery still need explicit manual verification, and Windows requires an
+  installed NSIS build for identity/icon validation.
+- Frozen dependency installation passed after adding the notification plugin;
+  Vite remains reachable at `http://127.0.0.1:1420/`. The Orca runtime used for
+  earlier UI inspection is currently stopped, so no new native screenshot was
+  claimed for this feature.
+- `pnpm verify:quick` reached the full test phase but one pre-existing
+  `PackagesPage.dom.test.tsx` case exceeded its 5s per-test timeout under the
+  full parallel suite (1,042/1,043 passed). Rerunning that file alone passed all
+  22 tests in 1.8s; this is recorded as a flaky full-suite environment timeout,
+  not a notification failure.
 
 # Session: 2026-09-01 Detached widget collapse parity
 

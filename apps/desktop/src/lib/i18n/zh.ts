@@ -151,6 +151,8 @@ export const zh: Record<MessageKey, string> = {
   generalRestoreSessionDesc: "启动 PiDeck 时重新打开上次的工作区和对话。",
   generalAutoRestart: "自动重启 Pi Host",
   generalAutoRestartDesc: "主机进程崩溃时先自动重启一次，仍失败才提示错误。",
+  generalSystemNotifications: "系统通知",
+  generalSystemNotificationsDesc: "PiDeck 窗口未获得焦点时，在需要你处理时发送系统通知。",
   generalBusySendGroup: "智能体运行中",
   generalBusySend: "运行中发送",
   generalBusySendDesc: "当前轮次还在进行时，再发送一条消息会怎么处理。",
@@ -1181,4 +1183,9 @@ export const zh: Record<MessageKey, string> = {
   notifCenterClearAll: "全部清除",
   notifCenterDismiss: "关闭通知",
   notifCenterDismissPreview: "关闭通知预览",
+  systemNotificationTitle: "PiDeck",
+  systemNotificationReady: "有新的回复",
+  systemNotificationInput: "需要你的输入",
+  systemNotificationFailed: "会话执行失败",
+  systemNotificationHostUnavailable: "PiDeck 需要你的注意",
 };

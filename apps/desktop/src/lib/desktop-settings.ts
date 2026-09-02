@@ -50,6 +50,7 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "lastSessionPath",
   "agentDir",
   "autoRestartHostOnce",
+  "systemNotificationsEnabled",
   "busySendBehavior",
   "extensionDecisionPresentation",
   "terminalProfile",
@@ -137,7 +138,11 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
       throw new Error(`${key} must be an integer between ${min} and ${max}`);
     }
   }
-  for (const key of ["restoreLastSession", "autoRestartHostOnce"] as const) {
+  for (const key of [
+    "restoreLastSession",
+    "autoRestartHostOnce",
+    "systemNotificationsEnabled",
+  ] as const) {
     if (values[key] !== undefined && typeof values[key] !== "boolean") {
       throw new Error(`${key} must be a boolean`);
     }

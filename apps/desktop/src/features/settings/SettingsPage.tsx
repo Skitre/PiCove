@@ -122,6 +122,19 @@ function GeneralSettings() {
                   onChange={(next) => void patchDesktop({ autoRestartHostOnce: next })}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="min-w-0">
+                  <span className="block text-sm">{t("generalSystemNotifications")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("generalSystemNotificationsDesc")}
+                  </span>
+                </span>
+                <Switch
+                  checked={desktopSettings?.systemNotificationsEnabled ?? true}
+                  label={t("generalSystemNotifications")}
+                  onChange={(next) => void patchDesktop({ systemNotificationsEnabled: next })}
+                />
+              </div>
             </div>
           </section>
 

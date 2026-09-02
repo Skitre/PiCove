@@ -152,6 +152,31 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
     };
   }, [slotId]);
 
+  // The main window owns native notifications, but a focused Float is still
+  // PiDeck in the foreground. Relay focus changes so the main window can
+  // suppress duplicate OS alerts while the user is looking at this surface.
+  useEffect(() => {
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        if (cancelled) return;
+        const unlisten = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+          void sendFloatIntent({ kind: "focus", slotId, focused });
+        });
+        if (cancelled) unlisten();
+        else dispose = unlisten;
+      } catch {
+        // Browser/test surfaces do not expose native focus events.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [slotId]);
+
   const intent = (next: FloatIntent) => void sendFloatIntent(next);
 
   /**

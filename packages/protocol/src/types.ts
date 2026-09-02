@@ -1059,6 +1059,8 @@ export type DesktopSettings = {
   lastSessionPath?: string;
   agentDir?: string;
   autoRestartHostOnce: boolean;
+  /** Whether PiDeck may surface attention-worthy background events as OS notifications. */
+  systemNotificationsEnabled?: boolean;
   /** How Composer send behaves while the Session is already running. Absent values use follow-up. */
   busySendBehavior?: BusySendBehavior;
   extensionDecisionPresentation: ExtensionDecisionPresentation;

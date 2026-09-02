@@ -133,6 +133,37 @@ describe("SettingsPage navigation guard", () => {
     expect(screen.queryByText("Restore last session")).not.toBeInTheDocument();
   });
 
+  it("shows and persists the system notification setting", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage initialSection="general" />);
+
+    const toggle = screen.getByRole("switch", { name: "System notifications" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.click(toggle);
+
+    await waitFor(() =>
+      expect(useAppStore.getState().desktopSettings?.systemNotificationsEnabled).toBe(false),
+    );
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("localizes the system notification setting in Chinese", () => {
+    useAppStore.getState().setDesktopSettings({
+      theme: "system",
+      language: "zh",
+      restoreLastSession: true,
+      autoRestartHostOnce: true,
+      extensionDecisionPresentation: "legacy-modal",
+      terminalProfile: "auto",
+    });
+    render(<SettingsPage initialSection="general" />);
+
+    expect(screen.getByRole("switch", { name: "系统通知" })).toBeInTheDocument();
+    expect(
+      screen.getByText("PiDeck 窗口未获得焦点时，在需要你处理时发送系统通知。"),
+    ).toBeInTheDocument();
+  });
+
   it("persists density and typography controls and applies them immediately", async () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);

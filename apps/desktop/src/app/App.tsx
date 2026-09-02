@@ -25,8 +25,15 @@ import { classifyToolSnapshot } from "../lib/stores/tool-revision";
 import { expectedIdentityForEvent, extensionUiRequestDelivery } from "./event-identity";
 import { observeExtensionUiHostEvent } from "../lib/extension-ui-observation";
 import { publishValidatedHostEvent } from "../lib/bridge/validated-host-events";
-import { mergeHostIdentity, nullableSessionContext } from "../lib/bridge/host-context";
-import { requestSessionOpenWithRetry } from "../lib/bridge/session-open-request";
+import {
+  mergeHostIdentity,
+  nullableSessionContext,
+  workspaceContext,
+} from "../lib/bridge/host-context";
+import {
+  requestSessionOpenWithRetry,
+  SESSION_OPEN_TIMEOUT_MS,
+} from "../lib/bridge/session-open-request";
 import { summarizeHostFailure } from "../lib/host-failure-message";
 import { getAppVersion } from "../lib/app-version";
 import { checkForAppUpdate } from "../lib/updater";
@@ -49,12 +56,106 @@ import {
   pushExtensionTerminalFrame,
 } from "../lib/chat/extension-terminal-bus";
 import type { HostEventEnvelope, HostEventPayloadMap } from "@pideck/protocol";
+import { subscribeFloatIntents } from "../lib/extension-float-transport";
+import {
+  SystemNotificationController,
+  type SystemNotificationTarget,
+} from "../lib/system-notifications";
 import { CommandLayer } from "../lib/commands/CommandLayer";
 import {
   resolveWindowFrameAttribute,
   resolveWindowFrameMode,
   type WindowFrameMode,
 } from "../lib/window-frame";
+
+async function openSystemNotificationTarget(target: SystemNotificationTarget): Promise<void> {
+  const initial = useAppStore.getState();
+  initial.setPage("chat");
+  let host = initial.host;
+  if (!host) return;
+
+  if (target.workspacePath && initial.workspace?.canonicalCwd !== target.workspacePath) {
+    const switched = await hostClient.request(
+      "workspace.setCurrent",
+      workspaceContext(host, initial.workspace),
+      { cwd: target.workspacePath },
+      60_000,
+    );
+    if (!switched.ok) {
+      useAppStore
+        .getState()
+        .pushNotification(switched.error?.message ?? tCurrent("notifSetWorkspaceFailed"), "error");
+      return;
+    }
+    const result = switched.result;
+    const current = useAppStore.getState();
+    if (
+      current.workspace?.id !== result.workspace.id ||
+      current.workspace.revision !== result.workspace.revision
+    ) {
+      current.setWorkspace(result.workspace);
+    }
+    if (result.session) {
+      const active = useAppStore.getState().session;
+      if (
+        active?.sessionId !== result.session.sessionId ||
+        active.revision !== result.session.revision
+      ) {
+        useAppStore.getState().applySessionSnapshot(result.session);
+      }
+    }
+    host = useAppStore.getState().host;
+    if (host) {
+      useAppStore.getState().setHost({
+        ...host,
+        workspaceId: switched.workspaceId,
+        workspaceRevision: switched.workspaceRevision,
+        sessionId: switched.sessionId,
+        sessionRevision: switched.sessionRevision,
+        packageRevision: switched.packageRevision,
+      });
+    }
+  }
+
+  if (!target.sessionPath || !host) return;
+  const sessionPath = target.sessionPath;
+  if (useAppStore.getState().session?.sessionPath === sessionPath) return;
+  const opened = await requestSessionOpenWithRetry(() => {
+    const current = useAppStore.getState();
+    if (!current.host || !current.workspace) {
+      throw new Error(tCurrent("notifOpenSessionFailed"));
+    }
+    return hostClient.request(
+      "session.open",
+      {
+        expectedHostInstanceId: current.host.hostInstanceId,
+        expectedWorkspaceId: current.workspace.id,
+        expectedWorkspaceRevision: current.workspace.revision,
+        expectedSessionId: current.host.sessionId,
+        expectedSessionRevision: current.host.sessionRevision,
+      },
+      { sessionPath },
+      SESSION_OPEN_TIMEOUT_MS,
+    );
+  });
+  if (!opened) return;
+  if (!opened.ok) {
+    useAppStore
+      .getState()
+      .pushNotification(opened.error?.message ?? tCurrent("notifOpenSessionFailed"), "error");
+    return;
+  }
+  const current = useAppStore.getState();
+  if (
+    current.session?.sessionId !== opened.result.sessionId ||
+    current.session.revision !== opened.result.revision
+  ) {
+    current.applySessionSnapshot(opened.result);
+  }
+  const latestHost = useAppStore.getState().host;
+  const nextHost = latestHost ? mergeHostIdentity(latestHost, opened) : null;
+  if (nextHost) useAppStore.getState().setHost(nextHost);
+}
 
 function SettingsOverlay({ section }: { section: SettingsSection }) {
   const t = useT();
@@ -564,8 +665,66 @@ export function App() {
     let unsub = () => {};
     let unsubTransportError = () => {};
     let cancelPendingAgentEvents = () => {};
+    let unsubscribeFloatFocus = () => {};
+    let unsubscribeMainFocus = () => {};
     let cancelled = false;
     let bootstrapTimer: number | null = null;
+    let mainFocusKnown = false;
+    let mainFocused = false;
+    let visibility: DocumentVisibilityState = document.visibilityState;
+    const focusedFloats = new Set<string>();
+    const attention = () => {
+      if (visibility === "hidden") return "background" as const;
+      if (!mainFocusKnown) return "unknown" as const;
+      return mainFocused || focusedFloats.size > 0 ? "foreground" : "background";
+    };
+    const systemNotifications = new SystemNotificationController({
+      enabled: () => useAppStore.getState().desktopSettings?.systemNotificationsEnabled ?? true,
+      attention,
+      targetForSession: (sessionId, event) => {
+        const current = useAppStore.getState();
+        const catalog = current.sessionCatalog.entries[sessionId];
+        const active = current.session?.sessionId === sessionId ? current.session : null;
+        const sessionCwd = active?.cwd ?? catalog?.cwd;
+        return {
+          workspaceId: event.workspaceId,
+          workspaceRevision: event.workspaceRevision,
+          ...(sessionCwd ? { workspacePath: sessionCwd } : {}),
+          sessionId,
+          ...((active?.sessionPath ?? catalog?.sessionPath)
+            ? { sessionPath: active?.sessionPath ?? catalog?.sessionPath }
+            : {}),
+          ...(event.sessionRevision !== undefined
+            ? { sessionRevision: event.sessionRevision }
+            : {}),
+        };
+      },
+      openTarget: openSystemNotificationTarget,
+    });
+    void systemNotifications.start();
+    const onVisibilityChange = () => {
+      visibility = document.visibilityState;
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void import("@tauri-apps/api/window")
+      .then(async ({ getCurrentWindow }) => {
+        if (cancelled) return;
+        const unlisten = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+          mainFocusKnown = true;
+          mainFocused = focused;
+        });
+        if (cancelled) unlisten();
+        else unsubscribeMainFocus = unlisten;
+      })
+      .catch(() => undefined);
+    void subscribeFloatIntents((intent) => {
+      if (intent.kind !== "focus") return;
+      if (intent.focused) focusedFloats.add(intent.slotId);
+      else focusedFloats.delete(intent.slotId);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unsubscribeFloatFocus = unlisten;
+    });
 
     (async () => {
       const store = useAppStore.getState();
@@ -592,6 +751,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
+            systemNotificationsEnabled: true,
             extensionDecisionPresentation: "auto",
             terminalProfile: "auto",
           });
@@ -600,6 +760,7 @@ export function App() {
             theme: "dark",
             restoreLastSession: true,
             autoRestartHostOnce: true,
+            systemNotificationsEnabled: true,
             extensionDecisionPresentation: "auto",
             terminalProfile: "auto",
           });
@@ -898,6 +1059,7 @@ export function App() {
           if (event.event === "host.ready") {
             cancelAgentEvents();
             recoveryEvents.cancel();
+            systemNotifications.reset();
             scheduleRecovery(event.hostInstanceId, "host ready");
             return;
           }
@@ -907,6 +1069,7 @@ export function App() {
           if (recoveryEvents.capture(event)) return;
           if (handleHostEvent(event, requestRecovery, agentEventBuffer)) {
             publishValidatedHostEvent(event);
+            systemNotifications.observe(event);
           }
         });
         unsubTransportError = hostClient.onTransportError(repairTransport);
@@ -940,6 +1103,10 @@ export function App() {
       cancelPendingAgentEvents();
       unsub();
       unsubTransportError();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      unsubscribeMainFocus();
+      unsubscribeFloatFocus();
+      systemNotifications.dispose();
       hostClient.detach("application unmounted");
     };
   }, []);
