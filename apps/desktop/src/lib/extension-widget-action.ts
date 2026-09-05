@@ -5,6 +5,7 @@ import { useAppStore } from "./stores/app-store";
 
 /** Dispatch from an in-window widget using the freshest active Session identity. */
 export async function dispatchExtensionWidgetAction(
+  extensionId: string,
   key: string,
   actionId: string,
 ): Promise<string | null> {
@@ -14,7 +15,7 @@ export async function dispatchExtensionWidgetAction(
     const response = await hostClient.request(
       "extensionUi.widgetAction",
       activeSessionContext(host, workspace, session),
-      { key, actionId },
+      { extensionId, key, actionId },
     );
     return response.ok
       ? null

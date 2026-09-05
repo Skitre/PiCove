@@ -102,6 +102,7 @@ type WidgetActionCandidate = {
 
 type WidgetActionRegistry = {
   candidates: (
+    extensionId: string,
     key: string,
     actionId: string,
     expectedOwner: ExtensionUiOwner,
@@ -179,9 +180,15 @@ function replaceOwner(target: ExtensionUiOwner, identity: HostIdentity): void {
   Object.assign(target, ownerFromIdentity(identity));
 }
 
+function scopedLiveStateIdentity(extensionId: string, key: string): string {
+  return `${extensionId}\u0000${key}`;
+}
+
 function liveStateIdentity(key: string, origin: unknown): string {
   const candidate = origin as ExtensionUiOrigin | undefined;
-  return isTrustedExtensionUiOrigin(candidate) ? `${candidate.extensionId}\u0000${key}` : key;
+  return isTrustedExtensionUiOrigin(candidate)
+    ? scopedLiveStateIdentity(candidate.extensionId, key)
+    : key;
 }
 
 export type ExtensionUiBridgeOptions = {
@@ -493,14 +500,14 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
   >();
 
   const widgetActionRegistry: WidgetActionRegistry = {
-    candidates: (key, actionId, expectedOwner) => {
+    candidates: (extensionId, key, actionId, expectedOwner) => {
       if (!ownerMatches(ownerFromIdentity(identityAt()), expectedOwner)) return [];
-      const candidates: WidgetActionCandidate[] = [];
-      for (const [storageKey, published] of structuredWidgetActions) {
-        if (published.key !== key || !published.actionIds.has(actionId)) continue;
-        const registered = widgetActionHandlers.get(storageKey);
-        if (!registered || registered.key !== key) continue;
-        candidates.push({
+      const storageKey = scopedLiveStateIdentity(extensionId, key);
+      const published = structuredWidgetActions.get(storageKey);
+      const registered = widgetActionHandlers.get(storageKey);
+      if (!published?.actionIds.has(actionId) || !registered) return [];
+      return [
+        {
           invoke: async () => {
             try {
               await registered.handler(actionId);
@@ -512,9 +519,8 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
               });
             }
           },
-        });
-      }
-      return candidates;
+        },
+      ];
     },
   };
   if (opts.registerCleanup) {
@@ -1475,12 +1481,13 @@ export function injectExtensionCustomInput(
 
 /** Deliver one declared widget action to its unique trusted live publisher. */
 async function dispatchExtensionWidgetAction(
+  extensionId: string,
   key: string,
   actionId: string,
   expectedOwner: ExtensionUiOwner,
 ): Promise<boolean> {
   const candidates = [...activeWidgetActionRegistries].flatMap((registry) =>
-    registry.candidates(key, actionId, expectedOwner),
+    registry.candidates(extensionId, key, actionId, expectedOwner),
   );
   if (candidates.length !== 1) return false;
   await candidates[0]!.invoke();
@@ -1565,9 +1572,10 @@ export function createExtensionUiHandlers(
       });
       if (stale) return { error: stale };
 
-      const params = ctx.params as { key: string; actionId: string };
+      const params = ctx.params as { extensionId: string; key: string; actionId: string };
       if (
         !(await dispatchExtensionWidgetAction(
+          params.extensionId,
           params.key,
           params.actionId,
           ownerFromTargetContext(ctx.context as SessionTargetContext),

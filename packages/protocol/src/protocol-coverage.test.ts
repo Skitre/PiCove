@@ -211,7 +211,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   },
   "extensionUi.configure": { extensionDecisionPresentation: "auto" },
   "extensionUi.respond": { requestId: EXTENSION_REQUEST_ID, status: "resolved", value: true },
-  "extensionUi.widgetAction": { key: "fleet", actionId: "retry" },
+  "extensionUi.widgetAction": { extensionId: "ext_review", key: "fleet", actionId: "retry" },
   "extensionUi.customInput": { requestId: EXTENSION_REQUEST_ID, data: "\r" },
   "extensionUi.customResize": { requestId: EXTENSION_REQUEST_ID, cols: 100, rows: 32 },
 };

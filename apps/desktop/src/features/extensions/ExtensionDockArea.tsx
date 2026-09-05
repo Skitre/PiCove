@@ -35,6 +35,7 @@ import {
 } from "../../lib/extension-ui-profile";
 import { useLiveExtensionPresentationSlots } from "../../lib/extension-ui-live-slots";
 import { useAppStore } from "../../lib/stores/app-store";
+import { dispatchExtensionWidgetAction } from "../../lib/extension-widget-action";
 import { useT } from "../../lib/i18n/use-t";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
 import { openExtensionSlotContextMenu } from "./extension-slot-context-menu";
@@ -371,6 +372,7 @@ export function ExtensionDockArea({ visible }: { visible: boolean }) {
                     <ExtensionWidgetRows
                       widgets={item.mount.widgets}
                       form={rendererFormFor("widget", "dock")}
+                      onAction={dispatchExtensionWidgetAction}
                     />
                   ) : null}
                   {item.mount.statuses?.length ? (

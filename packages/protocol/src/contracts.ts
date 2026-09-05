@@ -304,7 +304,7 @@ export type HostRequestParams = {
     status: "resolved" | "cancelled";
     value?: JsonValue;
   };
-  "extensionUi.widgetAction": { key: string; actionId: string };
+  "extensionUi.widgetAction": { extensionId: string; key: string; actionId: string };
   "extensionUi.customInput": { requestId: string; data: string };
   "extensionUi.customResize": { requestId: string; cols: number; rows: number };
 };

@@ -165,6 +165,34 @@ describe("parseHostRequest", () => {
     expectedWorkspaceRevision: 1,
   };
 
+  it("requires a bounded Extension identity for widget actions and rejects raw-key fallback", () => {
+    const request = (params: unknown) =>
+      parseHostRequest({
+        protocolVersion: 1,
+        id: REQUEST_ID,
+        method: "extensionUi.widgetAction",
+        context: activeSessionContext,
+        params,
+      });
+    const params = { extensionId: "ext_review", key: "summary", actionId: "open" };
+    expect(request(params).ok).toBe(true);
+    expect(request({ key: "summary", actionId: "open" }).ok).toBe(false);
+    for (const extensionId of [
+      undefined,
+      null,
+      42,
+      "",
+      "   ",
+      "x".repeat(257),
+      "ext\u0000other",
+      "ext\u200bother",
+    ]) {
+      expect(request({ ...params, extensionId }).ok).toBe(false);
+    }
+    expect(request({ ...params, extensionId: "x".repeat(256) }).ok).toBe(true);
+    expect(request({ ...params, spoofedOrigin: "ext_other" }).ok).toBe(false);
+  });
+
   it("accepts system.hello with empty context", () => {
     const result = parseHostRequest({
       protocolVersion: 1,

@@ -2154,7 +2154,7 @@ describe("Extension Deck origin capture", () => {
       handlers["extensionUi.widgetAction"]!({
         id: `widget-action-${actionId}`,
         context,
-        params: { key: "fleet", actionId },
+        params: { extensionId: trustedPackageOrigin.extensionId, key: "fleet", actionId },
       } as never);
 
     await expect(dispatch("retry")).resolves.toEqual({ result: { accepted: true } });
@@ -2189,7 +2189,7 @@ describe("Extension Deck origin capture", () => {
     binding.cleanup();
   });
 
-  it("rejects an ambiguous public key instead of guessing an Extension", async () => {
+  it("routes same-key actions by Extension and never falls back after a handler unregisters", async () => {
     let origin = trustedToolOrigin;
     let ui: ReturnType<typeof createExtensionUiContext> | undefined;
     const session = {
@@ -2206,27 +2206,55 @@ describe("Extension Deck origin capture", () => {
     publish();
     const received: string[] = [];
     const publishForOrigin = (name: string) => {
-      ui!.onWidgetAction("summary", () => {
+      const unsubscribe = ui!.onWidgetAction("summary", () => {
         received.push(name);
       });
       ui!.setWidget("summary", {
         pideck: 1,
         rows: [{ kind: "actions", actions: [{ id: "open", label: "Open" }] }],
       });
+      return unsubscribe;
     };
-    publishForOrigin("review");
+    const unsubscribeReview = publishForOrigin("review");
     origin = { ...trustedToolOrigin, extensionId: "ext_other", extensionDisplayName: "Other" };
     publishForOrigin("other");
 
     const { handlers } = extensionUiHandlers();
-    const result = await handlers["extensionUi.widgetAction"]!({
-      id: "ambiguous-widget-action",
-      context: targetContext(),
-      params: { key: "summary", actionId: "open" },
-    } as never);
-    expect("error" in result && result.error.code).toBe("STALE_REVISION");
-    expect(received).toEqual([]);
-    binding.cleanup();
+    const dispatch = (extensionId: string, context = targetContext()) =>
+      handlers["extensionUi.widgetAction"]!({
+        id: "scoped-widget-action",
+        context,
+        params: { extensionId, key: "summary", actionId: "open" },
+      } as never);
+    try {
+      await expect(dispatch("ext_review")).resolves.toEqual({ result: { accepted: true } });
+      await expect(dispatch("ext_other")).resolves.toEqual({ result: { accepted: true } });
+      expect(received).toEqual(["review", "other"]);
+
+      for (const extensionId of ["ext_missing", "", "ext_review\u0000summary"]) {
+        await expect(dispatch(extensionId)).resolves.toMatchObject({
+          error: { code: "STALE_REVISION" },
+        });
+      }
+      await expect(
+        dispatch("ext_review", { ...targetContext(), expectedSessionId: "other-session" }),
+      ).resolves.toMatchObject({ error: { code: "STALE_REVISION" } });
+
+      unsubscribeReview();
+      await expect(dispatch("ext_review")).resolves.toMatchObject({
+        error: { code: "STALE_REVISION" },
+      });
+      expect(received).toEqual(["review", "other"]);
+      await expect(dispatch("ext_other")).resolves.toEqual({ result: { accepted: true } });
+      expect(received).toEqual(["review", "other", "other"]);
+
+      ui!.setWidget("summary", undefined);
+      await expect(dispatch("ext_other")).resolves.toMatchObject({
+        error: { code: "STALE_REVISION" },
+      });
+    } finally {
+      binding.cleanup();
+    }
   });
 
   it("attaches active invocation origin to widget, status, and custom start", async () => {

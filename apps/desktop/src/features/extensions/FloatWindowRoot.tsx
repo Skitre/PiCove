@@ -297,7 +297,7 @@ function FloatBody({ message, waiting }: { message: FloatContentMessage | null; 
         onToggleCollapsed={(key) =>
           void sendFloatIntent({ kind: "toggleWidgetCollapsed", slotId: message.slotId, key })
         }
-        onAction={async (key, actionId) => {
+        onAction={async (_extensionId, key, actionId) => {
           try {
             await sendFloatIntent({
               kind: "widgetAction",

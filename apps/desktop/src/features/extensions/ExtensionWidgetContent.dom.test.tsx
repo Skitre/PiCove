@@ -7,6 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ExtensionWidgetRows, type ExtensionWidgetActionDispatch } from "./ExtensionWidgetContent";
 
+const origin = {
+  invocationKind: "background" as const,
+  extensionId: "ext_review",
+  extensionDisplayName: "Review",
+  sourceKind: "package" as const,
+};
+
 function structuredWidget() {
   return {
     pideck: 1 as const,
@@ -78,7 +85,7 @@ describe("structured Extension widgets", () => {
   it("renders semantic rows and host-owned controls", () => {
     render(
       <ExtensionWidgetRows
-        widgets={[{ key: "fleet", widget: structuredWidget() }]}
+        widgets={[{ key: "fleet", widget: structuredWidget(), origin }]}
         form="panel"
         onAction={vi.fn(async () => null)}
       />,
@@ -107,7 +114,7 @@ describe("structured Extension widgets", () => {
     );
     render(
       <ExtensionWidgetRows
-        widgets={[{ key: "fleet", widget: structuredWidget() }]}
+        widgets={[{ key: "fleet", widget: structuredWidget(), origin }]}
         form="panel"
         onAction={onAction}
       />,
@@ -115,7 +122,7 @@ describe("structured Extension widgets", () => {
 
     const open = screen.getByRole("button", { name: "Open" });
     await userEvent.click(open);
-    expect(onAction).toHaveBeenCalledWith("fleet", "open");
+    expect(onAction).toHaveBeenCalledWith("ext_review", "fleet", "open");
     expect(open).toBeDisabled();
     expect(open).toHaveAttribute("aria-busy", "true");
     await act(async () => finish?.(null));
@@ -130,6 +137,7 @@ describe("structured Extension widgets", () => {
         widgets={[
           {
             key: "fleet",
+            origin,
             widget: {
               pideck: 1,
               rows: [
@@ -158,8 +166,52 @@ describe("structured Extension widgets", () => {
     const dialog = screen.getByRole("dialog", { name: "Confirm Stop all" });
     expect(within(dialog).getByText("Stop every agent?")).toBeVisible();
     await userEvent.click(within(dialog).getByRole("button", { name: "Stop all" }));
-    expect(onAction).toHaveBeenCalledWith("fleet", "stop");
+    expect(onAction).toHaveBeenCalledWith("ext_review", "fleet", "stop");
   });
+
+  it("keeps actions from identical widget keys scoped to each trusted publisher", async () => {
+    const onAction = vi.fn(async () => null);
+    render(
+      <ExtensionWidgetRows
+        widgets={[
+          { key: "fleet", storageKey: "a:fleet", widget: structuredWidget(), origin },
+          {
+            key: "fleet",
+            storageKey: "b:fleet",
+            widget: structuredWidget(),
+            origin: { ...origin, extensionId: "ext_other" },
+          },
+        ]}
+        form="panel"
+        onAction={onAction}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Open" });
+    await userEvent.click(buttons[0]!);
+    await userEvent.click(buttons[1]!);
+    expect(onAction.mock.calls).toEqual([
+      ["ext_review", "fleet", "open"],
+      ["ext_other", "fleet", "open"],
+    ]);
+  });
+
+  it.each([undefined, { invocationKind: "unknown" as const }])(
+    "disables actions without trusted origin (%j)",
+    async (unknownOrigin) => {
+      const onAction = vi.fn(async () => null);
+      render(
+        <ExtensionWidgetRows
+          widgets={[{ key: "fleet", widget: structuredWidget(), origin: unknownOrigin }]}
+          form="panel"
+          onAction={onAction}
+        />,
+      );
+      const button = screen.getByRole("button", { name: "Open" });
+      expect(button).toBeDisabled();
+      await userEvent.click(button);
+      expect(onAction).not.toHaveBeenCalled();
+    },
+  );
 
   it("falls back to the existing read-only renderer for a newer version", () => {
     render(

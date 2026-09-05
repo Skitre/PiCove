@@ -9,6 +9,8 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { resetExtensionDeckV1GateForTests } from "../../lib/extension-deck-gate";
 import { RightDock } from "../../components/RightDock";
 import { MenuHost } from "../../components/Menu";
+import { hostClient } from "../../lib/bridge/host-client";
+import { ExtensionDockArea } from "./ExtensionDockArea";
 
 const trusted = {
   invocationKind: "command" as const,
@@ -75,6 +77,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   resetExtensionDeckV1GateForTests();
   vi.unstubAllGlobals();
 });
@@ -92,6 +95,55 @@ function startCustom(overlay?: boolean) {
 }
 
 describe("RightDock extension-deck-v1", () => {
+  it("keeps structured widget actions enabled in Dock and sends their trusted identity", async () => {
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: { accepted: true } } as never);
+    useAppStore.setState({
+      host: {
+        hostInstanceId: "h1",
+        workspaceId: "w1",
+        workspaceRevision: 1,
+        sessionId: "s1",
+        sessionRevision: 1,
+      } as never,
+      workspace: { id: "w1", revision: 1 } as never,
+      session: { sessionId: "s1", revision: 1 } as never,
+      collapsedExtensionWidgetKeys: {},
+      desktopSettings: {
+        ...useAppStore.getState().desktopSettings!,
+        extensionUi: {
+          ...DEFAULT_EXTENSION_UI_SETTINGS,
+          presentations: {
+            "pi-subagents": { widget: { home: { kind: "dock", group: "primary", order: 0 } } },
+          },
+        },
+      },
+    });
+    useAppStore.getState().setExtensionWidget({
+      key: "summary",
+      origin: trusted,
+      hostInstanceId: "h1",
+      workspaceId: "w1",
+      workspaceRevision: 1,
+      sessionId: "s1",
+      sessionRevision: 1,
+      widget: {
+        pideck: 1,
+        rows: [{ kind: "actions", actions: [{ id: "open", label: "Open summary" }] }],
+      },
+    });
+    render(<ExtensionDockArea visible />);
+    const button = screen.getByRole("button", { name: "Open summary" });
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+    expect(request).toHaveBeenCalledWith("extensionUi.widgetAction", context, {
+      extensionId: "pi-subagents",
+      key: "summary",
+      actionId: "open",
+    });
+  });
+
   it("uses one Extensions tab for docked custom and never mounts the legacy request tab", () => {
     resetExtensionDeckV1GateForTests(true);
     act(() => startCustom(false));

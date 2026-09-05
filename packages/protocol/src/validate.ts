@@ -27,7 +27,7 @@ import {
   validateEventPayloadShape,
   validateMethodResultShape,
 } from "./dto-validate.js";
-import { isExtensionDialogPresentationOverrides } from "./extension-ui-settings.js";
+import { isExtensionDialogPresentationOverrides, isExtensionId } from "./extension-ui-settings.js";
 import { createHostError, type HostError, type JsonValue } from "./errors.js";
 import { isHostEventName, type HostEventName } from "./events.js";
 import type { HostEventEnvelope, HostResponseEnvelope } from "./envelopes.js";
@@ -709,7 +709,10 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid extensionUi.respond params", { method });
     case "extensionUi.widgetAction":
-      return exactObject(params, ["key", "actionId"]) &&
+      return exactObject(params, ["extensionId", "key", "actionId"]) &&
+        isExtensionId(params.extensionId) &&
+        params.extensionId.trim().length > 0 &&
+        !/[\p{Cc}\p{Cf}]/u.test(params.extensionId) &&
         isNonEmptyString(params.key) &&
         params.key.length <= MAX_STRUCTURED_WIDGET_KEY_LENGTH &&
         !/[\p{Cc}\p{Cf}]/u.test(params.key) &&

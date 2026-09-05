@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { ChevronRight, LoaderCircle } from "lucide-react";
 import {
   parseStructuredWidget,
+  trustedExtensionId,
   type StructuredWidget,
   type StructuredWidgetAction,
   type StructuredWidgetTone,
@@ -15,6 +16,7 @@ import type { ExtensionRendererForm } from "../../lib/extension-ui-renderer-form
 import type { LiveWidgetContent } from "../../lib/extension-ui-slots";
 
 export type ExtensionWidgetActionDispatch = (
+  extensionId: string,
   key: string,
   actionId: string,
 ) => Promise<string | null>;
@@ -128,10 +130,12 @@ function structuredActionClass(action: StructuredWidgetAction): string {
 
 function StructuredWidgetBody({
   widget,
+  extensionId,
   widgetKey,
   onAction,
 }: {
   widget: StructuredWidget;
+  extensionId: string | undefined;
   widgetKey: string;
   onAction?: ExtensionWidgetActionDispatch;
 }) {
@@ -141,10 +145,10 @@ function StructuredWidgetBody({
   const [confirming, setConfirming] = useState<StructuredWidgetAction | null>(null);
 
   const runAction = async (action: StructuredWidgetAction) => {
-    if (!onAction || action.disabled || pendingActionId !== null) return;
+    if (!extensionId || !onAction || action.disabled || pendingActionId !== null) return;
     setPendingActionId(action.id);
     try {
-      const error = await onAction(widgetKey, action.id);
+      const error = await onAction(extensionId, widgetKey, action.id);
       if (error) pushNotification(error, "error");
     } catch (error) {
       pushNotification(
@@ -223,7 +227,9 @@ function StructuredWidgetBody({
                   key={action.id}
                   type="button"
                   className={structuredActionClass(action)}
-                  disabled={action.disabled || pendingActionId !== null || !onAction}
+                  disabled={
+                    action.disabled || pendingActionId !== null || !onAction || !extensionId
+                  }
                   aria-busy={pending || undefined}
                   onClick={() => {
                     if (action.confirm) setConfirming(action);
@@ -365,7 +371,12 @@ function WidgetRow({
       {!collapsed && (
         <div id={contentId} className="mt-1 pl-5">
           {structured ? (
-            <StructuredWidgetBody widget={structured} widgetKey={entry.key} onAction={onAction} />
+            <StructuredWidgetBody
+              widget={structured}
+              extensionId={trustedExtensionId(entry.origin)}
+              widgetKey={entry.key}
+              onAction={onAction}
+            />
           ) : form === "panel" ? (
             <PanelWidgetBody widget={entry.widget} />
           ) : (

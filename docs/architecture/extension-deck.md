@@ -939,7 +939,7 @@ An action dispatches through a new Host method alongside the existing
 ownership and epoch guards:
 
 ```ts
-"extensionUi.widgetAction": { key: string; actionId: string };
+"extensionUi.widgetAction": { extensionId: string; key: string; actionId: string };
 // result: { accepted: true }
 ```
 
@@ -951,7 +951,13 @@ type-level declaration follows the existing SDK patch.
 
 Mandatory guards, all mirroring `extensionUi.customInput`:
 
-- the action is delivered only to the trusted origin that published that key;
+- the action is delivered only to the trusted Extension identified by
+  `extensionId + key`; identical widget keys in different Extensions remain
+  independent, including after either handler unregisters;
+- Desktop takes the identity from the widget's trusted publication origin.
+  For detached windows, the main window derives it from the native-bound slot,
+  never from an Extension identity supplied by the Float;
+- requests without an Extension identity are rejected; there is no raw-key fallback;
 - a key with no live widget, no registered handler, or an unknown `actionId`
   is rejected rather than queued;
 - session switch and epoch advance invalidate pending actions;

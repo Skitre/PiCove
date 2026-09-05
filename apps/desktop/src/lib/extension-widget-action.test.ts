@@ -31,7 +31,7 @@ describe("dispatchExtensionWidgetAction", () => {
       result: { accepted: true },
     } as never);
 
-    await expect(dispatchExtensionWidgetAction("fleet", "retry")).resolves.toBeNull();
+    await expect(dispatchExtensionWidgetAction("ext_review", "fleet", "retry")).resolves.toBeNull();
     expect(request).toHaveBeenCalledWith(
       "extensionUi.widgetAction",
       {
@@ -41,7 +41,7 @@ describe("dispatchExtensionWidgetAction", () => {
         expectedSessionId: "s1",
         expectedSessionRevision: 5,
       },
-      { key: "fleet", actionId: "retry" },
+      { extensionId: "ext_review", key: "fleet", actionId: "retry" },
     );
   });
 
@@ -50,16 +50,20 @@ describe("dispatchExtensionWidgetAction", () => {
       ok: false,
       error: { message: "Action is stale" },
     } as never);
-    await expect(dispatchExtensionWidgetAction("fleet", "retry")).resolves.toBe("Action is stale");
+    await expect(dispatchExtensionWidgetAction("ext_review", "fleet", "retry")).resolves.toBe(
+      "Action is stale",
+    );
 
     vi.spyOn(hostClient, "request").mockRejectedValueOnce(new Error("Host unavailable"));
-    await expect(dispatchExtensionWidgetAction("fleet", "retry")).resolves.toBe("Host unavailable");
+    await expect(dispatchExtensionWidgetAction("ext_review", "fleet", "retry")).resolves.toBe(
+      "Host unavailable",
+    );
   });
 
   it("does not send without a live Session", async () => {
     useAppStore.setState({ session: null });
     const request = vi.spyOn(hostClient, "request");
-    await expect(dispatchExtensionWidgetAction("fleet", "retry")).resolves.toBe(
+    await expect(dispatchExtensionWidgetAction("ext_review", "fleet", "retry")).resolves.toBe(
       "Extension action is no longer available",
     );
     expect(request).not.toHaveBeenCalled();

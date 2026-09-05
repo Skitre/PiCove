@@ -177,6 +177,12 @@ describe("FloatWindowRoot placement", () => {
           widgets: [
             {
               key: "fleet",
+              origin: {
+                invocationKind: "background",
+                extensionId: "pi-subagents",
+                extensionDisplayName: "Subagents",
+                sourceKind: "package",
+              },
               widget: {
                 pideck: 1,
                 rows: [{ kind: "actions", actions: [{ id: "open", label: "Open" }] }],

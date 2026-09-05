@@ -393,10 +393,15 @@ export function ExtensionFloatWindowController() {
           return;
         }
         case "widgetAction": {
-          if (!isLiveFloatWidgetAction(mount, intent.key, intent.actionId)) return;
-          void dispatchExtensionWidgetAction(intent.key, intent.actionId).then((error) => {
-            if (error) useAppStore.getState().pushNotification(error, "error");
-          });
+          if (!slot.extensionId || !isLiveFloatWidgetAction(mount, intent.key, intent.actionId))
+            return;
+          // Rust binds the sender to its slot. Derive the Extension here rather
+          // than accepting an identity supplied by the detached renderer.
+          void dispatchExtensionWidgetAction(slot.extensionId, intent.key, intent.actionId).then(
+            (error) => {
+              if (error) useAppStore.getState().pushNotification(error, "error");
+            },
+          );
           return;
         }
         case "toggleWidgetCollapsed": {
