@@ -746,7 +746,7 @@ the Settings row, the drag rules, and the float cap are identical in both.
 | Container | Where it lives                                                     | Geometry                                         | Stacking                                           |
 | --------- | ------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------- |
 | Attached  | HTML float layer in the main window (V1 behavior, and the default) | viewport-normalized rect                         | z-order within the float layer                     |
-| Detached  | Its own OS window                                                  | logical screen coordinates plus monitor identity | OS window order; `pinned` becomes OS always-on-top |
+| Detached  | Its own OS window                                                  | logical screen coordinates plus monitor identity | Always above the main window; `pinned` adds OS always-on-top |
 
 Floats support:
 
@@ -786,6 +786,11 @@ must re-resolve to a reachable container before its window goes away.
 A detached float is a **thin client**. The main window remains the only Host
 client and the only writer of `DesktopSettings`; the float window renders one
 slot and reports user intent back.
+
+Every detached float has the main window as its native parent/owner, so clicking
+PiDeck never covers an unpinned float. The `pinned` preference separately enables
+OS always-on-top above other applications. Native ownership also follows the
+platform's parent-window movement and minimization behavior.
 
 | Concern        | Rule                                                                                                                                                                                                       |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

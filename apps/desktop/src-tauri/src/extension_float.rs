@@ -177,7 +177,14 @@ impl ExtensionFloatManager {
             "index.html?surface=float&slot={}",
             urlencoding_component(slot_id)
         );
+        let main_window = app
+            .get_webview_window("main")
+            .ok_or_else(|| "main window does not exist".to_string())?;
         let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
+            // Native ownership keeps even unpinned floats above PiDeck when
+            // the main window is focused. Pinning still controls global topmost.
+            .parent(&main_window)
+            .map_err(|error| error.to_string())?
             .title(title)
             .inner_size(rect.width, rect.height)
             .position(rect.x, rect.y)
