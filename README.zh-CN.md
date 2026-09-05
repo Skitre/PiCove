@@ -1,19 +1,22 @@
 <div align="center">
 
-# PiDeck
+# PiCove
+
+原名 **PiDeck**。开发版界面现使用 PiCove；已发布的安装包和兼容标识仍沿用 PiDeck。
+详见[品牌过渡说明](./docs/operations/branding.md)。
 
 **[Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 的原生桌面应用**
 
 与你的编码智能体对话、实时查看工具调用、管理会话/模型/Packages —— 全部在一个可视化工作空间里。
 
-[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
-[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![CI](https://github.com/Skitre/PiCove/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiCove/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Skitre/PiCove?include_prereleases)](https://github.com/Skitre/PiCove/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#下载安装)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<img src="docs/assets/readme/workspace-new-zh.png" alt="PiDeck 工作区中的新对话" width="840">
+<img src="docs/assets/readme/workspace-new-zh.png" alt="PiCove 工作区中的新对话" width="840">
 
 </div>
 
@@ -26,7 +29,7 @@
 - **工作区 Dock** —— 浏览项目文件树、在提示词中引用文件、在内置浏览器标签中打开对话链接,并把终端常驻在对话旁边。
 - **Packages** —— 浏览 pi.dev 目录,安装和管理用户级 Extensions、Skills、Prompts 和 Themes。
 - **Extension UI 与终端** —— 扩展可以渲染自己的交互面板,集成的工作区终端一个快捷键即达。
-- **顺手好用** —— PiDeck / Vercel / Apple 三套主题,自定义键盘快捷键和右键菜单,界面支持简体中文和 English。
+- **顺手好用** —— PiCove / Vercel / Apple 三套主题,自定义键盘快捷键和右键菜单,界面支持简体中文和 English。
 
 ![Extension 交互提问与 Git 改动面板](docs/assets/readme/features-1.png)
 
@@ -41,8 +44,8 @@
       <br><sub>Apple 主题 · 工作区</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/assets/readme/settings-appearance-zh.png" alt="外观设置中的 PiDeck、Vercel、Apple 三套主题">
-      <br><sub>主题风格 · PiDeck / Vercel / Apple</sub>
+      <img src="docs/assets/readme/settings-appearance-zh.png" alt="外观设置中的 PiCove、Vercel、Apple 三套主题">
+      <br><sub>主题风格 · PiCove / Vercel / Apple</sub>
     </td>
   </tr>
   <tr>
@@ -89,7 +92,7 @@
 
 ## 下载安装
 
-从[最新 Release](https://github.com/Skitre/PiDeck/releases) 下载对应平台的安装包:
+从[最新 Release](https://github.com/Skitre/PiCove/releases) 下载对应平台的安装包:
 
 | 平台 | 文件 |
 |---|---|
@@ -98,7 +101,7 @@
 | macOS Intel | `PiDeck_<version>_x64.dmg` |
 
 这些安装包属于早期开发候选版,尚不是已验收、经平台认证的公开发行版。
-PiDeck 会自动检查并原地安装更新。
+PiCove 会自动检查并原地安装更新。
 
 > **早期测试版说明。** Windows 候选包尚未通过已验收的 Authenticode
 > 签名;macOS 候选包可能使用 ad-hoc 签名,而不是 Developer ID 签名与公证。
@@ -107,12 +110,12 @@ PiDeck 会自动检查并原地安装更新。
 
 ## 与 Pi CLI 协同,但不依赖它
 
-PiDeck 内置 Pi SDK(当前为 `0.84.2`)和独立的 Node 运行时,开箱即用:
+PiCove 内置 Pi SDK(当前为 `0.84.2`)和独立的 Node 运行时,开箱即用:
 不需要全局安装 `pi` 命令行或 Node;Windows 版还内置了 Git。
 
 如果你同时使用 Pi CLI,两者共享 `~/.pi/agent`(认证、模型设置、用户级
-Packages)和各工作区 `.pi` 目录(会话与历史)。PiDeck 不会加载或管理
-`<workspace>/.pi` 中的项目级 Package。建议让 CLI 版本与 PiDeck 固定的
+Packages)和各工作区 `.pi` 目录(会话与历史)。PiCove 不会加载或管理
+`<workspace>/.pi` 中的项目级 Package。建议让 CLI 版本与 PiCove 固定的
 SDK 版本保持接近,并避免同时在两个应用中编辑同一个会话。
 
 ## 从源码构建
@@ -134,7 +137,7 @@ pnpm --filter @pideck/desktop run tauri:dev
 
 ## 安全说明
 
-PiDeck 只从 `~/.pi/agent` 加载用户级 Package。打开工作区不会执行
+PiCove 只从 `~/.pi/agent` 加载用户级 Package。打开工作区不会执行
 `<workspace>/.pi/extensions`。请只安装可信来源的 Packages。Provider
 凭据、设置和会话属于 `~/.pi/agent` 下的用户数据，切勿提交到任何仓库。
 

@@ -37,7 +37,8 @@ function copyVerified(source, destination, expectedSha256) {
   if (!existsSync(source)) fail(`release asset is missing: ${source}`);
   if (sha256File(source) !== expectedSha256) fail(`release asset hash drifted: ${source}`);
   copyFileSync(source, destination);
-  if (sha256File(destination) !== expectedSha256) fail(`release asset copy drifted: ${destination}`);
+  if (sha256File(destination) !== expectedSha256)
+    fail(`release asset copy drifted: ${destination}`);
 }
 
 function assertAssetName(name, label) {
@@ -58,7 +59,8 @@ function assertSha256(value, label) {
 }
 
 function validatePlatformDescriptor(value) {
-  if (value.schemaVersion !== 1) fail(`unsupported platform descriptor schema ${value.schemaVersion}`);
+  if (value.schemaVersion !== 1)
+    fail(`unsupported platform descriptor schema ${value.schemaVersion}`);
   let expectedPlatform;
   try {
     expectedPlatform = updaterPlatformKey(value.platform, value.arch);
@@ -126,9 +128,11 @@ export function buildUpdateManifest({ tag, version, artifacts, repo, publishedAt
 export function stageCurrentPlatform({ root, tag, outputDir }) {
   const stagingDir = join(root, "apps/desktop/src-tauri/target/release-staging");
   const packageManifestPath = join(stagingDir, "PACKAGE_RELEASE.json");
-  if (!existsSync(packageManifestPath)) fail("PACKAGE_RELEASE.json missing — run pnpm package:release first");
+  if (!existsSync(packageManifestPath))
+    fail("PACKAGE_RELEASE.json missing — run pnpm package:release first");
   const packageManifest = JSON.parse(readFileSync(packageManifestPath, "utf8"));
-  if (packageManifest.status !== "ok") fail(`refusing a ${packageManifest.status} package:release run`);
+  if (packageManifest.status !== "ok")
+    fail(`refusing a ${packageManifest.status} package:release run`);
   if (packageManifest.platform !== process.platform || packageManifest.arch !== process.arch) {
     fail(
       `package manifest target ${packageManifest.platform}-${packageManifest.arch} does not match runner ${process.platform}-${process.arch}`,
@@ -141,7 +145,9 @@ export function stageCurrentPlatform({ root, tag, outputDir }) {
   assertTagVersion(tag, version);
   const platform = updaterPlatformKey(packageManifest.platform, packageManifest.arch);
   if (packageManifest.updaterPlatform && packageManifest.updaterPlatform !== platform) {
-    fail(`package manifest updater platform ${packageManifest.updaterPlatform} does not match ${platform}`);
+    fail(
+      `package manifest updater platform ${packageManifest.updaterPlatform} does not match ${platform}`,
+    );
   }
 
   const primary = packageManifest.primaryInstaller;
@@ -150,13 +156,15 @@ export function stageCurrentPlatform({ root, tag, outputDir }) {
     fail("accepted primary installer hash drifted since packaging");
   }
   const updater = packageManifest.updaterBundle ?? primary;
-  const updaterSha256 = packageManifest.updaterBundleSha256 ?? packageManifest.primaryInstallerSha256;
+  const updaterSha256 =
+    packageManifest.updaterBundleSha256 ?? packageManifest.primaryInstallerSha256;
   if (!existsSync(updater) || sha256File(updater) !== updaterSha256) {
     fail("accepted updater bundle is missing or hash drifted");
   }
   const signaturePath =
     packageManifest.updaterSignatureFile ?? `${packageManifest.sourceInstaller}.sig`;
-  if (!signaturePath || !existsSync(signaturePath)) fail(`updater signature missing: ${signaturePath}`);
+  if (!signaturePath || !existsSync(signaturePath))
+    fail(`updater signature missing: ${signaturePath}`);
   const signature = readFileSync(signaturePath, "utf8").trim();
   if (!signature) fail(`updater signature is empty: ${signaturePath}`);
 
@@ -220,11 +228,13 @@ export function aggregateRelease({ inputDir, outputDir, tag, repo, publishedAt }
   }));
   for (const { value } of descriptors) validatePlatformDescriptor(value);
   const versions = new Set(descriptors.map(({ value }) => value.version));
-  if (versions.size !== 1) fail(`platform artifacts disagree on version: ${[...versions].join(", ")}`);
+  if (versions.size !== 1)
+    fail(`platform artifacts disagree on version: ${[...versions].join(", ")}`);
   const [version] = versions;
   assertTagVersion(tag, version);
   for (const { value } of descriptors) {
-    if (value.tag !== tag) fail(`platform ${value.updaterPlatform} was staged for ${value.tag}, not ${tag}`);
+    if (value.tag !== tag)
+      fail(`platform ${value.updaterPlatform} was staged for ${value.tag}, not ${tag}`);
   }
 
   rmSync(outputDir, { recursive: true, force: true });
@@ -297,17 +307,21 @@ function readArg(args, name) {
 function main() {
   const args = process.argv.slice(2);
   const tag = readArg(args, "--tag") ?? fail("--tag is required (e.g. --tag v0.1.1)");
-  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Skitre/PiDeck";
+  const repo = readArg(args, "--repo") ?? process.env.GITHUB_REPOSITORY ?? "Skitre/PiCove";
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   if (args.includes("--stage-platform")) {
-    const outputDir = readArg(args, "--output-dir") ??
+    const outputDir =
+      readArg(args, "--output-dir") ??
       join(root, "apps/desktop/src-tauri/target/release-staging/github-release-platform");
     const result = stageCurrentPlatform({ root, tag, outputDir });
-    console.log(`[generate-update-manifest] staged ${result.descriptor.updaterPlatform} at ${outputDir}`);
+    console.log(
+      `[generate-update-manifest] staged ${result.descriptor.updaterPlatform} at ${outputDir}`,
+    );
     return;
   }
   const inputDir = readArg(args, "--input-dir") ?? fail("--input-dir is required when aggregating");
-  const outputDir = readArg(args, "--output-dir") ??
+  const outputDir =
+    readArg(args, "--output-dir") ??
     join(root, "apps/desktop/src-tauri/target/release-staging/github-release");
   const result = aggregateRelease({
     inputDir,

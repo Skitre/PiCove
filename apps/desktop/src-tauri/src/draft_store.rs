@@ -164,7 +164,7 @@ impl DraftStore {
                 drafts: Vec::new(),
                 read_only: true,
                 warning: Some(format!(
-                    "Drafts were created by a newer PiDeck schema ({version}) and were left unchanged"
+                    "Drafts were created by a newer PiCove schema ({version}) and were left unchanged"
                 )),
                 recovered_from: None,
             }),

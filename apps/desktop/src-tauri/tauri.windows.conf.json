@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "PiDeck",
+        "title": "PiCove",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

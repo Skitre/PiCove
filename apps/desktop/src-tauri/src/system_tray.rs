@@ -61,14 +61,14 @@ fn install_windows(app: &mut tauri::App) -> tauri::Result<()> {
     };
 
     let menu = MenuBuilder::new(app)
-        .text(OPEN_MENU_ID, "Open PiDeck")
+        .text(OPEN_MENU_ID, "Open PiCove")
         .separator()
-        .text(QUIT_MENU_ID, "Quit PiDeck")
+        .text(QUIT_MENU_ID, "Quit PiCove")
         .build()?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("PiDeck")
+        .tooltip("PiCove")
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match menu_action(event.id().as_ref()) {
             TrayMenuAction::Open => show_main_window(app),

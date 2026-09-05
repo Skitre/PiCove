@@ -218,7 +218,7 @@ export function SidebarLayout({
           >
             <PiMark className="mac-sidebar-brand-mark size-8" />
             <span className="text-[15px] font-semibold" data-sidebar-brand>
-              Pi Agent
+              PiCove
             </span>
             <div className="ml-auto flex items-center gap-0.5">
               <button
@@ -333,7 +333,7 @@ export function SidebarLayout({
             </div>
 
             {/* Collapsed or not, the header row stays in place below Workspaces. */}
-            <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               <SessionList
                 showCreateAction={false}
                 collapsed={sessionsCollapsed}

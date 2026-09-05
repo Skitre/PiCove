@@ -23,7 +23,7 @@ function sha256(content) {
 const base = {
   tag: "v0.1.1",
   version: "0.1.1",
-  repo: "Skitre/PiDeck",
+  repo: "Skitre/PiCove",
   publishedAt: "2026-08-01T00:00:00.000Z",
 };
 
@@ -54,15 +54,15 @@ test("builds a cross-platform static updater manifest", () => {
     platforms: {
       "windows-x86_64": {
         signature: "windows-signature",
-        url: "https://github.com/Skitre/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_x64-setup.exe",
+        url: "https://github.com/Skitre/PiCove/releases/download/v0.1.1/PiDeck_0.1.1_x64-setup.exe",
       },
       "darwin-aarch64": {
         signature: "arm-signature",
-        url: "https://github.com/Skitre/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_aarch64.app.tar.gz",
+        url: "https://github.com/Skitre/PiCove/releases/download/v0.1.1/PiDeck_0.1.1_aarch64.app.tar.gz",
       },
       "darwin-x86_64": {
         signature: "intel-signature",
-        url: "https://github.com/Skitre/PiDeck/releases/download/v0.1.1/PiDeck_0.1.1_x64.app.tar.gz",
+        url: "https://github.com/Skitre/PiCove/releases/download/v0.1.1/PiDeck_0.1.1_x64.app.tar.gz",
       },
     },
   });
@@ -234,7 +234,7 @@ test("aggregates isolated platform artifacts without overwriting assets", () => 
       inputDir: input,
       outputDir: output,
       tag: "v0.1.1",
-      repo: "Skitre/PiDeck",
+      repo: "Skitre/PiCove",
       publishedAt: base.publishedAt,
     });
     assert.deepEqual(Object.keys(result.manifest.platforms).sort(), [

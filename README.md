@@ -1,19 +1,22 @@
 <div align="center">
 
-# PiDeck
+# PiCove
+
+Previously **PiDeck**. The development interface now uses PiCove; published installers
+and compatibility identifiers still use PiDeck. See the [branding transition](./docs/operations/branding.md).
 
 **A native desktop app for [Pi Coding Agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent)**
 
 Chat with your coding agent, watch its tools work, manage sessions, models, and packages — in one visual workspace.
 
-[![CI](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiDeck/actions/workflows/p0.yml)
-[![Release](https://img.shields.io/github/v/release/Skitre/PiDeck?include_prereleases)](https://github.com/Skitre/PiDeck/releases)
+[![CI](https://github.com/Skitre/PiCove/actions/workflows/p0.yml/badge.svg)](https://github.com/Skitre/PiCove/actions/workflows/p0.yml)
+[![Release](https://img.shields.io/github/v/release/Skitre/PiCove?include_prereleases)](https://github.com/Skitre/PiCove/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#download)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-<img src="docs/assets/readme/workspace-new-zh.png" alt="PiDeck new conversation in a workspace" width="840">
+<img src="docs/assets/readme/workspace-new-zh.png" alt="PiCove new conversation in a workspace" width="840">
 
 </div>
 
@@ -26,7 +29,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 - **Workspace Dock** — inspect the project file tree, reference files in a prompt, open conversation links in embedded browser tabs, and keep terminals beside the chat.
 - **Packages** — browse the pi.dev catalog, then install and manage user-scope Extensions, Skills, Prompts, and Themes.
 - **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
-- **Make it yours** — PiDeck, Vercel, and Apple themes; customizable keyboard shortcuts and context menus; English and 简体中文.
+- **Make it yours** — PiCove, Vercel, and Apple themes; customizable keyboard shortcuts and context menus; English and 简体中文.
 
 ![Interactive extension prompt and the Git changes panel](docs/assets/readme/features-1.png)
 
@@ -41,8 +44,8 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
       <br><sub>Apple theme — workspaces</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/assets/readme/settings-appearance-zh.png" alt="Appearance settings with PiDeck, Vercel, and Apple themes">
-      <br><sub>Themes — PiDeck / Vercel / Apple</sub>
+      <img src="docs/assets/readme/settings-appearance-zh.png" alt="Appearance settings with PiCove, Vercel, and Apple themes">
+      <br><sub>Themes — PiCove / Vercel / Apple</sub>
     </td>
   </tr>
   <tr>
@@ -89,7 +92,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 
 ## Download
 
-Grab the installer for your platform from the [latest release](https://github.com/Skitre/PiDeck/releases):
+Grab the installer for your platform from the [latest release](https://github.com/Skitre/PiCove/releases):
 
 | Platform | File |
 |---|---|
@@ -98,7 +101,7 @@ Grab the installer for your platform from the [latest release](https://github.co
 | macOS Intel | `PiDeck_<version>_x64.dmg` |
 
 These downloads are early-access development candidates rather than accepted,
-platform-certified public releases. PiDeck checks for updates automatically and
+platform-certified public releases. PiCove checks for updates automatically and
 installs them in place.
 
 > **Early-access builds.** Windows candidates do not yet carry an accepted
@@ -110,14 +113,14 @@ installs them in place.
 
 ## Works with the Pi CLI — but doesn't need it
 
-PiDeck bundles the Pi SDK (currently `0.84.2`) and its own Node runtime, so
+PiCove bundles the Pi SDK (currently `0.84.2`) and its own Node runtime, so
 it runs standalone — no global `pi` executable or Node installation required.
 The Windows build bundles Git as well.
 
 If you also use the Pi CLI, both share `~/.pi/agent` (authentication, model
 settings, and user-scope packages) and each workspace's `.pi` directory
-(sessions and history). PiDeck does not load or manage project-local packages
-from `<workspace>/.pi`. Keep the CLI version close to PiDeck's pinned SDK
+(sessions and history). PiCove does not load or manage project-local packages
+from `<workspace>/.pi`. Keep the CLI version close to PiCove's pinned SDK
 version, and avoid editing the same session from both apps at once.
 
 ## Build from source
@@ -141,7 +144,7 @@ production build and Rust tests). Native installers are built with
 
 ## Security
 
-PiDeck loads only user-scope packages from `~/.pi/agent`. Opening a
+PiCove loads only user-scope packages from `~/.pi/agent`. Opening a
 workspace does not run `<workspace>/.pi/extensions`. Only install packages
 you trust. Provider credentials, settings, and sessions are user data under
 `~/.pi/agent` — never commit them to a repository.

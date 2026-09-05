@@ -732,7 +732,7 @@ export class GitService {
     ) {
       throw new GitServiceError(
         "GIT_OPERATION_FAILED",
-        "This change does not support safe hunk operations in PiDeck",
+        "This change does not support safe hunk operations in PiCove",
       );
     }
     const diff = await this.getDiff(workspace, path, area, expectedRevision, signal);
@@ -835,7 +835,7 @@ export class GitService {
     ) {
       throw new GitServiceError(
         "GIT_OPERATION_FAILED",
-        "This change cannot be safely discarded from PiDeck",
+        "This change cannot be safely discarded from PiCove",
       );
     }
     this.validatePath(status.repositoryRoot, change.path);

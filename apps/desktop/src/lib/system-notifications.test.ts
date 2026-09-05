@@ -150,6 +150,6 @@ describe("systemNotificationCopy", () => {
       extensionDecisionPresentation: "auto",
       terminalProfile: "auto",
     });
-    expect(systemNotificationCopy("response-ready")).toEqual({ title: "PiDeck", body });
+    expect(systemNotificationCopy("response-ready")).toEqual({ title: "PiCove", body });
   });
 });

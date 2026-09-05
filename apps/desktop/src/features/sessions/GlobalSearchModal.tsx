@@ -277,7 +277,7 @@ export function GlobalSearchModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto p-2">
           {error ? (
             <p className="px-2 py-6 text-center text-sm text-danger">{error}</p>
           ) : !shouldRunGlobalSearch(query) ? (

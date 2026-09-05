@@ -1148,7 +1148,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     getTheme: (name) => (name === "pideck-stub" ? desktopTheme : undefined),
     setTheme: () => ({
       success: false,
-      error: "Theme switching is unsupported in PiDeck",
+      error: "Theme switching is unsupported in PiCove",
     }),
     getToolsExpanded: () => false,
     setToolsExpanded: () => {},

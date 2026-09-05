@@ -354,7 +354,7 @@ function MarketCatalogGrid({
   onInstall: (item: PackageCatalogItem) => void;
 }) {
   return (
-    <div className="scrollbar-auto-hide grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
+    <div className="scrollbar-subtle grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto p-4 lg:grid-cols-2 2xl:grid-cols-3">
       {items.map((item) => (
         <MarketPackageCard
           key={item.name}

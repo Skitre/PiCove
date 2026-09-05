@@ -39,10 +39,7 @@ export function HostSettings() {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("desktop_open_path", { path: host.agentDir });
     } catch (err) {
-      pushNotification(
-        err instanceof Error ? err.message : t("notifAgentDirOpenFailed"),
-        "error",
-      );
+      pushNotification(err instanceof Error ? err.message : t("notifAgentDirOpenFailed"), "error");
     }
   }
 
@@ -69,7 +66,9 @@ export function HostSettings() {
     } catch (err) {
       setUpdatePhase({ state: "idle" });
       pushNotification(
-        err instanceof Error ? `${t("notifUpdateCheckFailed")}: ${err.message}` : t("notifUpdateCheckFailed"),
+        err instanceof Error
+          ? `${t("notifUpdateCheckFailed")}: ${err.message}`
+          : t("notifUpdateCheckFailed"),
         "error",
       );
     }
@@ -99,7 +98,9 @@ export function HostSettings() {
     } catch (err) {
       setUpdatePhase({ state: "available", update });
       pushNotification(
-        err instanceof Error ? `${t("notifUpdateInstallFailed")}: ${err.message}` : t("notifUpdateInstallFailed"),
+        err instanceof Error
+          ? `${t("notifUpdateInstallFailed")}: ${err.message}`
+          : t("notifUpdateInstallFailed"),
         "error",
       );
     }
@@ -170,10 +171,18 @@ export function HostSettings() {
                 </p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button type="button" className={secondaryButton} onClick={() => void openAgentDir()}>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => void openAgentDir()}
+                >
                   {t("hostOpenAgentDir")}
                 </button>
-                <button type="button" className={secondaryButton} onClick={() => void changeAgentDir()}>
+                <button
+                  type="button"
+                  className={secondaryButton}
+                  onClick={() => void changeAgentDir()}
+                >
                   {t("hostChangeAgentDir")}
                 </button>
               </div>
@@ -210,7 +219,7 @@ export function HostSettings() {
             <h2 className="mb-2 text-sm font-medium text-muted">{t("hostAboutGroup")}</h2>
             <div className="flex flex-col gap-2 rounded-lg border border-border p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted">PiDeck</span>
+                <span className="text-muted">PiCove</span>
                 <span className="font-mono">{appVersion ?? "—"}</span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">

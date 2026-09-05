@@ -40,7 +40,7 @@ export const en = {
   commandStopGeneration: "Stop generation",
   commandShowShortcuts: "Show keyboard shortcuts",
   shortcutsTitle: "Keyboard shortcuts",
-  shortcutsSubtitle: "Customize commands active while PiDeck is focused",
+  shortcutsSubtitle: "Customize commands active while PiCove is focused",
   shortcutsUnassigned: "Unassigned",
   shortcutsRecord: "Change shortcut for {command}",
   shortcutsRecording: "Press shortcut...",
@@ -89,7 +89,7 @@ export const en = {
   workspacesSwitchingTo: "Opening {name}…",
 
   // Startup
-  startupPreparing: "Preparing PiDeck",
+  startupPreparing: "Preparing PiCove",
   startupStartingHost: "Starting Pi Host",
   startupRestoringWorkspace: "Restoring workspace",
   startupRestoringSession: "Restoring session",
@@ -98,7 +98,7 @@ export const en = {
 
   // Settings shell
   settingsTitle: "Settings",
-  settingsSubtitle: "Configure PiDeck and its runtime",
+  settingsSubtitle: "Configure PiCove and its runtime",
   settingsBack: "Back to conversation",
   navGeneral: "General",
   navAppearance: "Appearance",
@@ -120,14 +120,14 @@ export const en = {
   appearanceSubtitle: "Theme, density, language, and conversation typography",
   appearanceInterfaceGroup: "Interface",
   appearanceThemeFamily: "Theme style",
-  appearanceThemeFamilyDesc: "Choose the visual language used across PiDeck.",
-  appearanceThemePideck: "PiDeck",
+  appearanceThemeFamilyDesc: "Choose the visual language used across PiCove.",
+  appearanceThemePideck: "PiCove",
   appearanceThemeVercel: "Vercel",
   appearanceThemeApple: "Apple",
   appearanceColorMode: "Color mode",
   appearanceColorModeDesc: "Follow the system appearance or use a fixed mode.",
   appearanceDensity: "Interface density",
-  appearanceDensityDesc: "Adjust row, control, and list spacing across PiDeck.",
+  appearanceDensityDesc: "Adjust row, control, and list spacing across PiCove.",
   appearanceDensityCompact: "Compact",
   appearanceDensityStandard: "Standard",
   appearanceDensityComfortable: "Comfortable",
@@ -145,7 +145,7 @@ export const en = {
   generalThemeLight: "Light",
   generalThemeDark: "Dark",
   generalLanguage: "Language",
-  generalLanguageDesc: "Language of the PiDeck interface.",
+  generalLanguageDesc: "Language of the PiCove interface.",
   generalConversationWidth: "Conversation width",
   generalConversationWidthDesc:
     "Maximum width for messages, the composer, and inline panels. Minimum {min}px.",
@@ -155,13 +155,13 @@ export const en = {
   generalSubtitle: "Startup behavior and Pi Host configuration",
   generalStartupGroup: "Startup",
   generalRestoreSession: "Restore last session",
-  generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiDeck starts.",
+  generalRestoreSessionDesc: "Reopen your last workspace and conversation when PiCove starts.",
   generalAutoRestart: "Auto-restart Pi Host",
   generalAutoRestartDesc:
     "If the host process crashes, restart it once automatically before showing an error.",
   generalSystemNotifications: "System notifications",
   generalSystemNotificationsDesc:
-    "Notify you when PiDeck needs attention while its windows are not focused.",
+    "Notify you when PiCove needs attention while its windows are not focused.",
   generalBusySendGroup: "While the agent is running",
   generalBusySend: "Send while running",
   generalBusySendDesc: "What happens when you send another message during a turn.",
@@ -267,14 +267,14 @@ export const en = {
   hostAboutGroup: "About",
   hostUpdateCheck: "Check for updates",
   hostUpdateChecking: "Checking…",
-  hostUpdateUpToDate: "PiDeck is up to date.",
+  hostUpdateUpToDate: "PiCove is up to date.",
   hostUpdateAvailable: "Version {version} is available.",
   hostUpdateInstall: "Download and restart",
   hostUpdateDownloading: "Downloading update…",
   hostUpdateProgress: "{percent}% downloaded",
   hostUpdateInstalling: "Installing update…",
   hostUpdateBackground: "You can leave Settings; the update will continue in the background.",
-  notifUpdateAvailable: "PiDeck {version} is available — install it from Settings → Host",
+  notifUpdateAvailable: "PiCove {version} is available — install it from Settings → Host",
   notifUpdateCheckFailed: "Update check failed",
   notifUpdateInstallFailed: "Update install failed",
   notifAgentDirChanged: "Agent directory changed — restart Pi Host to apply",
@@ -596,7 +596,7 @@ export const en = {
   packagesRemoveReviewTitle: "Remove package",
   packagesRemoveConfirm: "Remove package",
   packagesRemoveWarning:
-    "This removes the package and its resources from the Agent. Removal cannot be undone from PiDeck.",
+    "This removes the package and its resources from the Agent. Removal cannot be undone from PiCove.",
   packagesProjectGateTitle: "Confirm project resource change",
   packagesProjectGateConfirm: "Apply change",
   packagesProjectGateBody:
@@ -857,7 +857,7 @@ export const en = {
   composerSendFailed: "Send failed",
   composerPromptFailed: "Prompt failed",
   composerLoginGuidance:
-    "PiDeck manages credentials in Settings — choose a provider and sign in there.",
+    "PiCove manages credentials in Settings — choose a provider and sign in there.",
   composerAbortFailed: "Abort failed",
   composerRemoveFile: "Remove file",
   composerRemoveNamedFile: "Remove {name}",
@@ -1218,11 +1218,11 @@ export const en = {
   notifCenterClearAll: "Clear all",
   notifCenterDismiss: "Dismiss notification",
   notifCenterDismissPreview: "Dismiss notification preview",
-  systemNotificationTitle: "PiDeck",
+  systemNotificationTitle: "PiCove",
   systemNotificationReady: "A response is ready",
   systemNotificationInput: "Input is needed",
   systemNotificationFailed: "A session failed",
-  systemNotificationHostUnavailable: "PiDeck needs attention",
+  systemNotificationHostUnavailable: "PiCove needs attention",
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -88,7 +88,7 @@ class MarkdownRenderBoundary extends Component<
   componentDidCatch(error: Error): void {
     // Syntax highlighting is optional; keep the transcript usable when its
     // lazy chunk is stale or unavailable during a Vite update.
-    console.warn("PiDeck Markdown enhancement failed; using plain text", error);
+    console.warn("PiCove Markdown enhancement failed; using plain text", error);
   }
 
   render() {
@@ -269,10 +269,10 @@ function MermaidError({ chart, error, retry }: MermaidErrorComponentProps) {
         <RotateCw className="size-3.5" aria-hidden="true" />
       </button>
       <details className="mt-2 min-w-0">
-        <summary className="cursor-pointer text-xs opacity-80">
-          {t("markdownShowSource")}
-        </summary>
-        <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-black/10 p-2 text-xs">{chart}</pre>
+        <summary className="cursor-pointer text-xs opacity-80">{t("markdownShowSource")}</summary>
+        <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-black/10 p-2 text-xs">
+          {chart}
+        </pre>
       </details>
     </div>
   );
@@ -355,9 +355,7 @@ function CollapsibleCodeBlock({ children }: MarkdownPreProps) {
           aria-expanded={expanded}
         >
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded
-            ? t("markdownCollapseCode")
-            : t("markdownExpandLines", { count: lineCount })}
+          {expanded ? t("markdownCollapseCode") : t("markdownExpandLines", { count: lineCount })}
         </button>
       )}
     </div>
@@ -413,14 +411,8 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     },
     [],
   );
-  const normalized = useMemo(
-    () => deferIncompleteMermaid(sanitizeAgentText(content)),
-    [content],
-  );
-  const mermaidKey = useMemo(
-    () => `mermaid-${mermaidFenceSignature(normalized)}`,
-    [normalized],
-  );
+  const normalized = useMemo(() => deferIncompleteMermaid(sanitizeAgentText(content)), [content]);
+  const mermaidKey = useMemo(() => `mermaid-${mermaidFenceSignature(normalized)}`, [normalized]);
 
   return (
     <div

@@ -85,7 +85,7 @@ export function StartupScreen({ stage, exiting }: { stage: StartupStage; exiting
       <div className="startup-drag-region" data-tauri-drag-region />
       <div className="startup-content">
         <PiMark className="startup-mark" />
-        <span className="startup-wordmark">PiDeck</span>
+        <span className="startup-wordmark">PiCove</span>
         <div className="startup-progress" aria-hidden="true">
           <span className="startup-progress-value" />
         </div>

@@ -29,8 +29,10 @@ describe("MarkdownMessage enhancement failures", () => {
 
     expect(container).toHaveTextContent("const answer = 42;");
     expect(warn).toHaveBeenCalledWith(
-      "PiDeck Markdown enhancement failed; using plain text",
-      expect.objectContaining({ message: expect.stringContaining("optional renderer unavailable") }),
+      "PiCove Markdown enhancement failed; using plain text",
+      expect.objectContaining({
+        message: expect.stringContaining("optional renderer unavailable"),
+      }),
     );
     warn.mockRestore();
     error.mockRestore();

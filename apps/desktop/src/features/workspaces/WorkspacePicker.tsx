@@ -266,7 +266,7 @@ export function WorkspacePicker({
           <Plus size={15} />
         </button>
       </div>
-      <div className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto">
+      <div className="scrollbar-subtle min-h-0 flex-1 overflow-y-auto">
         <CollapsibleRegion open={!collapsed} id="workspace-list-region">
           {listed.length === 0 ? (
             <button

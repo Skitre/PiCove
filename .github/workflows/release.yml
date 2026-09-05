@@ -194,11 +194,11 @@ jobs:
           assets=(release-output/*)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" --clobber "${assets[@]}"
-            gh release edit "$RELEASE_TAG" --draft --title "PiDeck $RELEASE_TAG"
+            gh release edit "$RELEASE_TAG" --draft --title "PiCove $RELEASE_TAG"
           else
             gh release create "$RELEASE_TAG" \
               --draft \
-              --title "PiDeck $RELEASE_TAG" \
+              --title "PiCove $RELEASE_TAG" \
               --generate-notes \
               "${assets[@]}"
           fi

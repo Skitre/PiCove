@@ -105,7 +105,7 @@ describe("HostSettings", () => {
     render(<HostSettings />);
 
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
-    expect(await screen.findByText("PiDeck is up to date.")).toBeInTheDocument();
+    expect(await screen.findByText("PiCove is up to date.")).toBeInTheDocument();
     expect(checkForAppUpdateMock).toHaveBeenCalledTimes(1);
   });
 

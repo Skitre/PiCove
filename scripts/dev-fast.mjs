@@ -141,7 +141,7 @@ async function isDesktopViteReady() {
   try {
     const response = await fetch(devUrl);
     if (!response.ok) return false;
-    return (await response.text()).includes("<title>PiDeck</title>");
+    return (await response.text()).includes("<title>PiCove</title>");
   } catch {
     return false;
   }

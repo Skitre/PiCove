@@ -160,7 +160,7 @@ describe("SettingsPage navigation guard", () => {
 
     expect(screen.getByRole("switch", { name: "系统通知" })).toBeInTheDocument();
     expect(
-      screen.getByText("PiDeck 窗口未获得焦点时，在需要你处理时发送系统通知。"),
+      screen.getByText("PiCove 窗口未获得焦点时，在需要你处理时发送系统通知。"),
     ).toBeInTheDocument();
   });
 
@@ -195,7 +195,7 @@ describe("SettingsPage navigation guard", () => {
     const user = userEvent.setup();
     render(<SettingsPage initialSection="appearance" />);
     const themeStyle = screen.getByRole("group", { name: "Theme style" });
-    const pideck = within(themeStyle).getByRole("button", { name: "PiDeck" });
+    const pideck = within(themeStyle).getByRole("button", { name: "PiCove" });
     const vercel = within(themeStyle).getByRole("button", { name: "Vercel" });
     const apple = within(themeStyle).getByRole("button", { name: "Apple" });
 
