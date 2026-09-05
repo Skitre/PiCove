@@ -60,7 +60,7 @@ pub fn desktop_window_set_bounds(
         );
 
         NSWindow::setFrame_display(ns_window, new_frame, false);
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(target_os = "macos"))]

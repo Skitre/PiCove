@@ -1867,7 +1867,7 @@ pub(crate) fn resolve_portable_git_from_dirs(
     #[cfg(not(windows))]
     {
         let _ = (resource_dir, exe_dir, debug);
-        return Ok(None);
+        Ok(None)
     }
 
     #[cfg(windows)]
