@@ -11,6 +11,7 @@ import {
 
 const windowApi = vi.hoisted(() => ({
   minimize: vi.fn(async () => undefined),
+  setSimpleFullscreen: vi.fn(async (_fullscreen: boolean) => undefined),
   toggleMaximize: vi.fn(async () => undefined),
   close: vi.fn(async () => undefined),
 }));
@@ -47,7 +48,7 @@ describe("shouldRenderWindowControls", () => {
 
 describe("WindowControls", () => {
   it("renders macOS traffic lights at the top-left in native action order", () => {
-    render(<WindowControls platform="macos" />);
+    render(<WindowControls platform="macos" macosFullscreen={false} />);
 
     const controls = screen.getByRole("group", { name: "Window controls" });
     expect(controls).toHaveAttribute("data-window-controls-platform", "macos");
@@ -56,7 +57,7 @@ describe("WindowControls", () => {
       within(controls)
         .getAllByRole("button")
         .map((button) => button.ariaLabel),
-    ).toEqual(["Close window", "Minimize window", "Maximize or restore window"]);
+    ).toEqual(["Close window", "Minimize window", "Enter or exit fullscreen"]);
     expect(
       within(controls).getByRole("button", { name: "Close window" }).firstElementChild,
     ).toHaveClass("mac-window-control-dot--close");
@@ -64,8 +65,7 @@ describe("WindowControls", () => {
       within(controls).getByRole("button", { name: "Minimize window" }).firstElementChild,
     ).toHaveClass("mac-window-control-dot--minimize");
     expect(
-      within(controls).getByRole("button", { name: "Maximize or restore window" })
-        .firstElementChild,
+      within(controls).getByRole("button", { name: "Enter or exit fullscreen" }).firstElementChild,
     ).toHaveClass("mac-window-control-dot--maximize");
   });
 
@@ -87,17 +87,95 @@ describe("WindowControls", () => {
   });
 
   it("routes macOS traffic-light clicks through the shared Tauri window actions", async () => {
+    const onFullscreenTransition = vi.fn();
+    const onFullscreenChange = vi.fn();
     const user = userEvent.setup();
-    render(<WindowControls platform="macos" />);
+    render(
+      <WindowControls
+        platform="macos"
+        macosFullscreen={false}
+        onMacosFullscreenTransition={onFullscreenTransition}
+        onMacosFullscreenChange={onFullscreenChange}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: "Close window" }));
     await user.click(screen.getByRole("button", { name: "Minimize window" }));
-    await user.click(screen.getByRole("button", { name: "Maximize or restore window" }));
+    await user.click(screen.getByRole("button", { name: "Enter or exit fullscreen" }));
 
     await waitFor(() => {
       expect(windowApi.close).toHaveBeenCalledOnce();
       expect(windowApi.minimize).toHaveBeenCalledOnce();
+      expect(onFullscreenTransition).toHaveBeenCalledWith(true);
+      expect(onFullscreenChange).toHaveBeenCalledWith(true);
+      expect(windowApi.toggleMaximize).not.toHaveBeenCalled();
+    });
+  });
+
+  it("exits fullscreen from the macOS green control when already fullscreen", async () => {
+    const onFullscreenChange = vi.fn();
+    const onFullscreenTransition = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <WindowControls
+        platform="macos"
+        macosFullscreen
+        onMacosFullscreenTransition={onFullscreenTransition}
+        onMacosFullscreenChange={onFullscreenChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Enter or exit fullscreen" }));
+
+    await waitFor(() => {
+      expect(onFullscreenTransition).toHaveBeenCalledWith(false);
+      expect(onFullscreenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it("keeps the Windows caption button on maximize and restore", async () => {
+    const user = userEvent.setup();
+    render(<WindowControls platform="windows" />);
+
+    await user.click(screen.getByRole("button", { name: "Maximize or restore window" }));
+
+    await waitFor(() => {
       expect(windowApi.toggleMaximize).toHaveBeenCalledOnce();
+      expect(windowApi.setSimpleFullscreen).not.toHaveBeenCalled();
+    });
+  });
+
+  it("rolls back the macOS fullscreen state when the native call fails", async () => {
+    const onFullscreenChange = vi.fn();
+    const onFullscreenTransition = vi.fn();
+    onFullscreenTransition.mockRejectedValueOnce(new Error("native failure"));
+    const user = userEvent.setup();
+    render(
+      <WindowControls
+        platform="macos"
+        macosFullscreen={false}
+        onMacosFullscreenTransition={onFullscreenTransition}
+        onMacosFullscreenChange={onFullscreenChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Enter or exit fullscreen" }));
+
+    await waitFor(() => {
+      expect(onFullscreenTransition).toHaveBeenNthCalledWith(1, true);
+      expect(onFullscreenTransition).toHaveBeenNthCalledWith(2, null);
+      expect(onFullscreenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it("uses simple fullscreen directly when no transition handler is provided", async () => {
+    const user = userEvent.setup();
+    render(<WindowControls platform="macos" />);
+
+    await user.click(screen.getByRole("button", { name: "Enter or exit fullscreen" }));
+
+    await waitFor(() => {
+      expect(windowApi.setSimpleFullscreen).toHaveBeenCalledWith(true);
     });
   });
 });

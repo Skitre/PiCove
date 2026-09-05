@@ -41,6 +41,11 @@ describe("native window platform configuration", () => {
     );
   });
 
+  it("allows native fullscreen transitions and the standalone simple-fullscreen fallback", () => {
+    expect(defaultCapability.permissions).toContain("core:window:allow-set-simple-fullscreen");
+    expect(defaultCapability.permissions).toContain("core:window:allow-set-fullscreen");
+  });
+
   it("pins the upstream Windows child-WebView focus restoration", () => {
     for (const packageName of ["tauri-runtime-wry", "tauri-runtime", "tauri-utils"]) {
       expect(cargoManifest).toContain(

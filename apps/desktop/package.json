@@ -23,7 +23,7 @@
     "@streamdown/math": "1.0.2",
     "@streamdown/mermaid": "1.0.2",
     "@tanstack/react-virtual": "^3.13.12",
-    "@tauri-apps/api": "2.5.0",
+    "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-clipboard-manager": "2.3.2",
     "@tauri-apps/plugin-dialog": "2.2.2",
     "@tauri-apps/plugin-notification": "2.3.3",

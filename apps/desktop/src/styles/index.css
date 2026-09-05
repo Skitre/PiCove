@@ -156,6 +156,36 @@ body,
   border-radius: 0;
 }
 
+[data-pideck-app][data-window-transition] {
+  will-change: border-radius;
+}
+
+[data-pideck-app][data-window-transition="entering"] {
+  animation: pideck-window-fullscreen-enter 240ms var(--theme-easing) both;
+}
+
+[data-pideck-app][data-window-transition="exiting"] {
+  animation: pideck-window-fullscreen-exit 240ms var(--theme-easing) both;
+}
+
+@keyframes pideck-window-fullscreen-enter {
+  from {
+    border-radius: var(--window-frame-radius);
+  }
+  to {
+    border-radius: 0;
+  }
+}
+
+@keyframes pideck-window-fullscreen-exit {
+  from {
+    border-radius: 0;
+  }
+  to {
+    border-radius: var(--window-frame-radius);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

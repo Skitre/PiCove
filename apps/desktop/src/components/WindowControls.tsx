@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Maximize2, Minus, Square, X, type LucideIcon } from "lucide-react";
 
 export type WindowControlsPlatform = "macos" | "windows";
@@ -22,15 +23,33 @@ export function resolveWindowControlsPlatform(
   return /\bMac(?:intosh|Intel|PPC)?\b/i.test(userAgent) ? "macos" : "windows";
 }
 
-type WindowAction = "minimize" | "toggleMaximize" | "close";
+type WindowAction = "minimize" | "toggleMaximize" | "toggleFullscreen" | "close";
 
-async function windowAction(action: WindowAction) {
+async function windowAction(
+  action: WindowAction,
+  macosFullscreen = false,
+  onMacosFullscreenTransition?: (fullscreen: boolean | null) => void | Promise<void>,
+  onMacosFullscreenChange?: (fullscreen: boolean) => void,
+) {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
     if (action === "minimize") await win.minimize();
     else if (action === "toggleMaximize") await win.toggleMaximize();
-    else await win.close();
+    else if (action === "toggleFullscreen") {
+      const nextFullscreen = !macosFullscreen;
+      try {
+        if (onMacosFullscreenTransition) {
+          await onMacosFullscreenTransition(nextFullscreen);
+        } else {
+          await win.setSimpleFullscreen(nextFullscreen);
+        }
+        onMacosFullscreenChange?.(nextFullscreen);
+      } catch {
+        await onMacosFullscreenTransition?.(null);
+        onMacosFullscreenChange?.(macosFullscreen);
+      }
+    } else await win.close();
   } catch {
     /* browser dev mode — no window API */
   }
@@ -52,15 +71,25 @@ const MACOS_CONTROLS: Array<{
     Icon: Minus,
   },
   {
-    action: "toggleMaximize",
-    label: "Maximize or restore window",
-    title: "Maximize / restore",
+    action: "toggleFullscreen",
+    label: "Enter or exit fullscreen",
+    title: "Enter / exit fullscreen",
     tone: "maximize",
     Icon: Maximize2,
   },
 ];
 
-function MacOSWindowControls() {
+function MacOSWindowControls({
+  fullscreen,
+  onFullscreenTransition,
+  onFullscreenChange,
+}: {
+  fullscreen: boolean;
+  onFullscreenTransition?: (fullscreen: boolean | null) => void | Promise<void>;
+  onFullscreenChange?: (fullscreen: boolean) => void;
+}) {
+  const [transitioning, setTransitioning] = useState(false);
+
   return (
     <div
       role="group"
@@ -76,7 +105,18 @@ function MacOSWindowControls() {
           aria-label={label}
           data-window-action={action}
           className="mac-window-control flex size-5 items-center justify-center rounded-full border-0 bg-transparent p-0"
-          onClick={() => void windowAction(action)}
+          disabled={action === "toggleFullscreen" && transitioning}
+          onClick={() => {
+            if (action === "toggleFullscreen") setTransitioning(true);
+            void windowAction(
+              action,
+              fullscreen,
+              onFullscreenTransition,
+              onFullscreenChange,
+            ).finally(() => {
+              if (action === "toggleFullscreen") setTransitioning(false);
+            });
+          }}
         >
           <span className={`mac-window-control-dot mac-window-control-dot--${tone}`}>
             <Icon className="mac-window-control-icon" aria-hidden="true" strokeWidth={3} />
@@ -132,8 +172,22 @@ function WindowsWindowControls() {
 /** Platform-native visual conventions over the shared frameless-window actions. */
 export function WindowControls({
   platform = resolveWindowControlsPlatform(),
+  macosFullscreen = false,
+  onMacosFullscreenTransition,
+  onMacosFullscreenChange,
 }: {
   platform?: WindowControlsPlatform;
+  macosFullscreen?: boolean;
+  onMacosFullscreenTransition?: (fullscreen: boolean | null) => void | Promise<void>;
+  onMacosFullscreenChange?: (fullscreen: boolean) => void;
 }) {
-  return platform === "macos" ? <MacOSWindowControls /> : <WindowsWindowControls />;
+  return platform === "macos" ? (
+    <MacOSWindowControls
+      fullscreen={macosFullscreen}
+      onFullscreenTransition={onMacosFullscreenTransition}
+      onFullscreenChange={onMacosFullscreenChange}
+    />
+  ) : (
+    <WindowsWindowControls />
+  );
 }

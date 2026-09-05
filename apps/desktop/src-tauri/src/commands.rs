@@ -7,12 +7,68 @@ use crate::shell_terminal::{
 };
 use crate::AppState;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, AppHandle, Emitter, State};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopWindowBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Applies a complete native window rectangle in one AppKit operation.
+///
+/// Calling Tauri's position and size setters independently can expose an
+/// intermediate frame for one compositor tick. Fullscreen restore animation
+/// uses this command so all four edges move together.
+#[tauri::command]
+pub fn desktop_window_set_bounds(
+    webview: tauri::Webview,
+    bounds: DesktopWindowBounds,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+        let window = webview.window();
+        let position = window.outer_position().map_err(|error| error.to_string())?;
+        let size = window.outer_size().map_err(|error| error.to_string())?;
+        let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
+        let ns_window = window.ns_window().map_err(|error| error.to_string())?;
+        let ns_window: &NSWindow = unsafe { &*ns_window.cast() };
+        let frame = NSWindow::frame(ns_window);
+
+        let dx = (bounds.x - position.x) as f64 / scale_factor;
+        let dy = (bounds.y - position.y) as f64 / scale_factor;
+        let delta_height = (bounds.height as f64 - size.height as f64) / scale_factor;
+        let new_frame = NSRect::new(
+            NSPoint::new(frame.origin.x + dx, frame.origin.y - dy - delta_height),
+            NSSize::new(
+                bounds.width as f64 / scale_factor,
+                bounds.height as f64 / scale_factor,
+            ),
+        );
+
+        NSWindow::setFrame_display(ns_window, new_frame, false);
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = bounds;
+        Err("desktop_window_set_bounds is only supported on macOS".to_string())
+    }
+}
 
 #[tauri::command]
 pub async fn desktop_settings_get(

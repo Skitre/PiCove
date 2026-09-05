@@ -148,6 +148,7 @@ pub fn run() {
             commands::desktop_drafts_apply,
             commands::desktop_open_path,
             commands::desktop_read_small_file,
+            commands::desktop_window_set_bounds,
             commands::pi_host_send,
             commands::pi_host_restart,
             commands::pi_host_status,

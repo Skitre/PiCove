@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBrowserOcclusion } from "../lib/browser-occlusion";
 import { useAppStore, type SettingsSection } from "../lib/stores/app-store";
 import { hostClient, isSyntheticLifecycleFatal } from "../lib/bridge/host-client";
@@ -67,6 +67,62 @@ import {
   resolveWindowFrameMode,
   type WindowFrameMode,
 } from "../lib/window-frame";
+
+const MACOS_FULLSCREEN_TRANSITION_MS = 320;
+const MACOS_FULLSCREEN_SETTLE_MS = 700;
+
+type WindowBounds = {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+};
+
+function easeInOutCubic(progress: number): number {
+  return progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+}
+
+async function animateWindowBounds(
+  win: {
+    setBounds: (bounds: WindowBounds) => Promise<void>;
+  },
+  from: WindowBounds,
+  to: WindowBounds,
+  durationMs: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const startedAt = performance.now();
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = easeInOutCubic(progress);
+      const bounds: WindowBounds = {
+        position: {
+          x: Math.round(from.position.x + (to.position.x - from.position.x) * eased),
+          y: Math.round(from.position.y + (to.position.y - from.position.y) * eased),
+        },
+        size: {
+          width: Math.round(from.size.width + (to.size.width - from.size.width) * eased),
+          height: Math.round(from.size.height + (to.size.height - from.size.height) * eased),
+        },
+      };
+
+      win
+        .setBounds(bounds)
+        .then(() => {
+          if (progress >= 1) resolve();
+          else requestAnimationFrame(tick);
+        })
+        .catch(reject);
+    };
+
+    requestAnimationFrame(tick);
+  });
+}
+
+function waitForNativeFullscreenSettle(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, MACOS_FULLSCREEN_SETTLE_MS));
+}
 
 async function openSystemNotificationTarget(target: SystemNotificationTarget): Promise<void> {
   const initial = useAppStore.getState();
@@ -635,6 +691,12 @@ export function App() {
   const windowControlsPlatform = resolveWindowControlsPlatform();
   const nativeWindowAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const [windowFrameMode, setWindowFrameMode] = useState<WindowFrameMode>("floating");
+  const [macosWindowZoomed, setMacosWindowZoomed] = useState(false);
+  const [macosFullscreenTransition, setMacosFullscreenTransition] = useState<
+    "entering" | "exiting" | null
+  >(null);
+  const fullscreenTransitionTimer = useRef<number | null>(null);
+  const macosFullscreenRestoreBounds = useRef<WindowBounds | null>(null);
   const page = useAppStore((s) => s.page);
   const settingsSection = useAppStore((s) => s.settingsSection);
   const settingsOverlayOpen = page !== "chat";
@@ -648,6 +710,108 @@ export function App() {
   const sessionRevision = useAppStore((s) => s.session?.revision ?? 0);
   const workspacePath = useAppStore((s) => s.workspace?.canonicalCwd);
   const activeSessionPath = useAppStore((s) => s.session?.sessionPath);
+
+  const clearFullscreenTransitionTimer = useCallback(() => {
+    if (fullscreenTransitionTimer.current !== null) {
+      window.clearTimeout(fullscreenTransitionTimer.current);
+      fullscreenTransitionTimer.current = null;
+    }
+  }, []);
+
+  const handleMacosFullscreenTransition = useCallback(
+    async (fullscreen: boolean | null) => {
+      clearFullscreenTransitionTimer();
+      if (fullscreen === null) {
+        setMacosFullscreenTransition(null);
+        return;
+      }
+
+      setMacosFullscreenTransition(fullscreen ? "entering" : "exiting");
+      const [{ getCurrentWindow }, { invoke }] = await Promise.all([
+        import("@tauri-apps/api/window"),
+        import("@tauri-apps/api/core"),
+      ]);
+      const appWindow = getCurrentWindow();
+      const setBounds = async (bounds: WindowBounds): Promise<void> => {
+        await invoke("desktop_window_set_bounds", {
+          bounds: {
+            x: bounds.position.x,
+            y: bounds.position.y,
+            width: bounds.size.width,
+            height: bounds.size.height,
+          },
+        });
+      };
+
+      if (fullscreen) {
+        const [position, size] = await Promise.all([
+          appWindow.outerPosition(),
+          appWindow.outerSize(),
+        ]);
+        macosFullscreenRestoreBounds.current = {
+          position: { x: position.x, y: position.y },
+          size: { width: size.width, height: size.height },
+        };
+
+        // Use macOS' native fullscreen transition so the window moves into a
+        // dedicated Space. Tao/AppKit owns the complete geometry animation,
+        // keeping all four edges in sync instead of racing separate position
+        // and size IPC calls from JavaScript.
+        await appWindow.setFullscreen(true);
+        await waitForNativeFullscreenSettle();
+        return;
+      }
+
+      await appWindow.setFullscreen(false);
+      await waitForNativeFullscreenSettle();
+
+      const restore = macosFullscreenRestoreBounds.current;
+      if (!restore) return;
+
+      const [position, size] = await Promise.all([
+        appWindow.outerPosition(),
+        appWindow.outerSize(),
+      ]);
+      const from: WindowBounds = {
+        position: { x: position.x, y: position.y },
+        size: { width: size.width, height: size.height },
+      };
+      await animateWindowBounds({ setBounds }, from, restore, MACOS_FULLSCREEN_TRANSITION_MS);
+      macosFullscreenRestoreBounds.current = null;
+    },
+    [clearFullscreenTransitionTimer],
+  );
+
+  const handleMacosFullscreenChange = useCallback(
+    (fullscreen: boolean) => {
+      setMacosWindowZoomed(fullscreen);
+      clearFullscreenTransitionTimer();
+      fullscreenTransitionTimer.current = window.setTimeout(
+        () => {
+          fullscreenTransitionTimer.current = null;
+          setMacosFullscreenTransition(null);
+        },
+        fullscreen ? MACOS_FULLSCREEN_TRANSITION_MS + 40 : 80,
+      );
+    },
+    [clearFullscreenTransitionTimer],
+  );
+
+  useEffect(() => {
+    return () => clearFullscreenTransitionTimer();
+  }, [clearFullscreenTransitionTimer]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (macosFullscreenTransition) {
+      root.dataset.pideckWindowTransition = macosFullscreenTransition;
+    } else {
+      delete root.dataset.pideckWindowTransition;
+    }
+    return () => {
+      delete root.dataset.pideckWindowTransition;
+    };
+  }, [macosFullscreenTransition]);
   const startupSettled = desktopSettings !== null && !connecting && !rehydrating && !desynchronized;
   const startupPhase = useInitialStartupScreen(startupSettled);
   const startupVisible = startupPhase !== "complete";
@@ -1141,7 +1305,9 @@ export function App() {
           appWindow.isMaximized(),
           appWindow.isFullscreen(),
         ]);
-        if (!disposed) setWindowFrameMode(resolveWindowFrameMode(maximized, fullscreen));
+        if (!disposed) {
+          setWindowFrameMode(resolveWindowFrameMode(maximized, fullscreen || macosWindowZoomed));
+        }
       };
 
       const scheduleFrameSync = () => {
@@ -1166,7 +1332,7 @@ export function App() {
       stopListening();
       if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
     };
-  }, [nativeWindowAvailable]);
+  }, [macosWindowZoomed, nativeWindowAvailable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1205,7 +1371,11 @@ export function App() {
       className="relative flex h-full flex-col overflow-hidden bg-surface text-foreground"
       data-pideck-app
       data-window-platform={windowControlsPlatform}
-      data-window-frame={resolveWindowFrameAttribute(nativeWindowAvailable, windowFrameMode)}
+      data-window-frame={resolveWindowFrameAttribute(
+        nativeWindowAvailable,
+        macosWindowZoomed ? "filled" : windowFrameMode,
+      )}
+      data-window-transition={macosFullscreenTransition ?? undefined}
       data-host-instance-id={hostInstanceId}
       data-session-id={sessionId}
       data-session-revision={sessionRevision}
@@ -1215,7 +1385,12 @@ export function App() {
       <DraftPersistenceController />
       <ExtensionFloatWindowController />
       {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
-        <WindowControls platform={windowControlsPlatform} />
+        <WindowControls
+          platform={windowControlsPlatform}
+          macosFullscreen={macosWindowZoomed}
+          onMacosFullscreenTransition={handleMacosFullscreenTransition}
+          onMacosFullscreenChange={handleMacosFullscreenChange}
+        />
       )}
       <div
         className={`flex min-h-0 flex-1 ${startupVisible ? "pointer-events-none" : ""}`}
