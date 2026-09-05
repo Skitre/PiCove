@@ -100,10 +100,11 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
             try {
               const [position, size, scale] = await Promise.all([
                 current.outerPosition(),
-                current.outerSize(),
+                current.innerSize(),
                 current.scaleFactor(),
               ]);
-              const factor = scale > 0 ? scale : 1;
+              const factor =
+                resolveWindowControlsPlatform() === "windows" ? 1 : scale > 0 ? scale : 1;
               const rect: ScreenRect = {
                 x: position.x / factor,
                 y: position.y / factor,

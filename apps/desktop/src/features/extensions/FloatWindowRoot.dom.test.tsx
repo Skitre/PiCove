@@ -20,7 +20,7 @@ const nativeWindow = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     outerPosition: () => Promise.resolve({ x: 0, y: 0 }),
-    outerSize: () => Promise.resolve({ width: 400, height: 300 }),
+    innerSize: () => Promise.resolve({ width: 400, height: 300 }),
     scaleFactor: () => Promise.resolve(1),
     onMoved: () => Promise.resolve(() => {}),
     onResized: () => Promise.resolve(() => {}),

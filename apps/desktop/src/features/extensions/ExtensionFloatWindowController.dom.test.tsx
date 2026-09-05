@@ -13,6 +13,14 @@ const fixture = vi.hoisted(() => ({
   onIntent: null as ((intent: FloatIntent) => void) | null,
   dispatch: vi.fn(async () => null),
   monitors: [] as MonitorDescriptor[],
+  platform: "macos",
+  open: vi.fn<() => Promise<{ slotId: string; label: string } | null>>(async () => null),
+  close: vi.fn(async () => {}),
+  bounds: vi.fn(async () => {}),
+}));
+
+vi.mock("../../components/WindowControls", () => ({
+  resolveWindowControlsPlatform: () => fixture.platform,
 }));
 
 vi.mock("../../lib/extension-widget-action", () => ({
@@ -26,9 +34,9 @@ vi.mock("../dock/ExtensionTerminal", () => ({
 }));
 vi.mock("../../lib/extension-float-transport", () => ({
   listFloatMonitors: async () => fixture.monitors,
-  openFloatWindow: async () => null,
-  closeFloatWindow: async () => {},
-  setFloatWindowBounds: async () => {},
+  openFloatWindow: fixture.open,
+  closeFloatWindow: fixture.close,
+  setFloatWindowBounds: fixture.bounds,
   setFloatWindowAlwaysOnTop: async () => {},
   publishFloatContent: async () => {},
   publishFloatFrame: async () => {},
@@ -72,6 +80,10 @@ function slot(extensionId?: string): ExtensionPresentationSlot {
 }
 
 beforeEach(() => {
+  fixture.platform = "macos";
+  fixture.open.mockReset().mockResolvedValue(null);
+  fixture.close.mockClear();
+  fixture.bounds.mockClear();
   clearExtensionUiUndo();
   fixture.monitors = [];
   fixture.slots = [slot("ext_a"), slot("ext_b"), slot()];
@@ -82,7 +94,10 @@ beforeEach(() => {
     collapsedExtensionWidgetKeys: {},
   });
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await act(async () => {});
+});
 
 it("remembers native moves and resizes without offering Undo, while placement changes still do", async () => {
   const monitor: MonitorDescriptor = {
@@ -174,4 +189,72 @@ it("rejects unowned slots and missing or disabled actions before dispatch", asyn
       fixture.onIntent?.({ kind: "widgetAction", slotId: slotId!, key: key!, actionId: actionId! });
   });
   expect(fixture.dispatch).not.toHaveBeenCalled();
+});
+
+function positionedSlot() {
+  const entry = slot("ext_a");
+  const monitor: MonitorDescriptor = {
+    name: "Display",
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
+  };
+  fixture.monitors = [monitor];
+  entry.mounts[0]!.home = {
+    kind: "float",
+    rect: { x: 0.1, y: 0.1, width: 360, height: 240 },
+    detached: { monitor, rect: { x: 100, y: 100, width: 360, height: 240 } },
+  };
+  fixture.slots = [entry];
+  return entry;
+}
+
+it.each(["slot removed", "unmounted"])("closes a late native open after %s", async (change) => {
+  const entry = positionedSlot();
+  let finish!: (value: { slotId: string; label: string }) => void;
+  fixture.open.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const view = render(<ExtensionFloatWindowController />);
+  await waitFor(() => expect(fixture.open).toHaveBeenCalledTimes(1));
+  if (change === "unmounted") view.unmount();
+  else {
+    fixture.slots = [];
+    view.rerender(<ExtensionFloatWindowController />);
+  }
+  await act(async () => {
+    finish({ slotId: entry.slotId, label: "pideck-float-fixture" });
+  });
+  await waitFor(() => expect(fixture.close).toHaveBeenCalledWith(entry.slotId));
+});
+
+it("adopts a pending open for the same slot after placement changes instead of opening twice", async () => {
+  const entry = positionedSlot();
+  let finish!: (value: { slotId: string; label: string }) => void;
+  fixture.open.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const view = render(<ExtensionFloatWindowController />);
+  await waitFor(() => expect(fixture.open).toHaveBeenCalledTimes(1));
+  const home = entry.mounts[0]!.home;
+  if (home.kind !== "float" || !home.detached) throw new Error("fixture needs placement");
+  entry.mounts[0]!.home = {
+    ...home,
+    detached: { ...home.detached, rect: { ...home.detached.rect, x: 300 } },
+  };
+  view.rerender(<ExtensionFloatWindowController />);
+  await act(async () => {
+    finish({ slotId: entry.slotId, label: "pideck-float-fixture" });
+  });
+  await waitFor(() =>
+    expect(fixture.bounds).toHaveBeenCalledWith(entry.slotId, expect.objectContaining({ x: 300 })),
+  );
+  expect(fixture.open).toHaveBeenCalledTimes(1);
+  expect(fixture.close).not.toHaveBeenCalled();
 });

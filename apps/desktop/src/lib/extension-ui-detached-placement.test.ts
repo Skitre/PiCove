@@ -243,3 +243,68 @@ describe("detachedPlacementFor", () => {
     expect(detachedPlacementFor({ x: 0, y: 0, width: 400, height: 300 }, [])).toBeUndefined();
   });
 });
+
+describe("Windows physical desktop coordinates", () => {
+  const primary: MonitorDescriptor = {
+    name: "Primary",
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
+  };
+  const secondary: MonitorDescriptor = {
+    name: "Secondary",
+    position: { x: 960, y: 0 },
+    size: { width: 1280, height: 720 },
+    scaleFactor: 2,
+  };
+  const physicalRect = { x: 2200, y: 200, width: 720, height: 480 };
+
+  it("selects the 200% secondary screen without overlapping the 100% primary", () => {
+    const saved = detachedPlacementFor(physicalRect, [primary, secondary], "physical")!;
+    expect(saved.monitor).toBe(secondary);
+    expect(saved.rect).toEqual({ x: 1100, y: 100, width: 360, height: 240 });
+    expect(resolveDetachedPlacement(saved, [primary, secondary], "physical")).toMatchObject({
+      rect: physicalRect,
+    });
+  });
+
+  it("restores existing saved logical placements into physical Windows bounds", () => {
+    const saved = { monitor: secondary, rect: { x: 1100, y: 100, width: 360, height: 240 } };
+    expect(resolveDetachedPlacement(saved, [primary, secondary], "physical")).toMatchObject({
+      rect: physicalRect,
+    });
+    expect(resolveDetachedPlacement(saved, [secondary], "logical")).toMatchObject({
+      rect: saved.rect,
+    });
+  });
+
+  it("keeps the local offset and logical size when the same screen changes scale", () => {
+    const saved = { monitor: secondary, rect: { x: 1100, y: 100, width: 360, height: 240 } };
+    const resized = {
+      ...secondary,
+      position: { x: 1920, y: 0 },
+      size: { width: 2560, height: 1440 },
+      scaleFactor: 1,
+    };
+    expect(resolveDetachedPlacement(saved, [primary, resized], "physical")).toMatchObject({
+      rect: { x: 2060, y: 100, width: 360, height: 240 },
+    });
+  });
+
+  it("handles monitors left of the primary and excludes the taskbar", () => {
+    const left = {
+      ...secondary,
+      position: { x: -1280, y: 0 },
+      workArea: { x: -1280, y: 0, width: 1280, height: 680 },
+    };
+    const saved = detachedPlacementFor(
+      { x: -2200, y: 1200, width: 720, height: 480 },
+      [primary, left],
+      "physical",
+    )!;
+    expect(saved.monitor).toBe(left);
+    expect(resolveDetachedPlacement(saved, [primary, left], "physical")).toMatchObject({
+      rect: { x: -2200, y: 880, width: 720, height: 480 },
+    });
+  });
+});

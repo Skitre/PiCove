@@ -6,6 +6,7 @@ import type {
 } from "@pideck/protocol";
 import { detachedPlacementFor } from "./extension-ui-detached-placement";
 import { listFloatMonitors } from "./extension-float-transport";
+import { resolveWindowControlsPlatform } from "../components/WindowControls";
 
 /**
  * Turning an attached Float into a detached one: where should its window go?
@@ -16,23 +17,26 @@ import { listFloatMonitors } from "./extension-float-transport";
  * offset from screen coordinates, which is what makes this conversion sound.
  */
 
-/** The main window's client-area origin, in logical screen pixels. */
-async function clientOriginOnScreen(): Promise<{ x: number; y: number }> {
-  if (typeof window === "undefined") return { x: 0, y: 0 };
+/** Client origin in physical screen pixels on Windows, logical pixels elsewhere. */
+async function clientOriginOnScreen(): Promise<{ x: number; y: number; scale: number }> {
+  if (typeof window === "undefined") return { x: 0, y: 0, scale: 1 };
+  const physical = resolveWindowControlsPlatform() === "windows";
   // screenX/screenY already describe the client area, so no title-bar
   // correction is needed. They read 0 in some embeddings; fall back to the
   // platform's own window position there.
-  if (window.screenX !== 0 || window.screenY !== 0) {
-    return { x: window.screenX, y: window.screenY };
+  if (!physical && (window.screenX !== 0 || window.screenY !== 0)) {
+    return { x: window.screenX, y: window.screenY, scale: 1 };
   }
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const current = getCurrentWindow();
-    const [position, scale] = await Promise.all([current.outerPosition(), current.scaleFactor()]);
+    const [position, scale] = await Promise.all([current.innerPosition(), current.scaleFactor()]);
     const factor = scale > 0 ? scale : 1;
-    return { x: position.x / factor, y: position.y / factor };
+    return physical
+      ? { x: position.x, y: position.y, scale: factor }
+      : { x: position.x / factor, y: position.y / factor, scale: 1 };
   } catch {
-    return { x: 0, y: 0 };
+    return { x: 0, y: 0, scale: 1 };
   }
 }
 
@@ -41,10 +45,10 @@ export type ViewportRect = { left: number; top: number; width: number; height: n
 async function screenRectForViewportRect(rect: ViewportRect): Promise<ScreenRect> {
   const origin = await clientOriginOnScreen();
   return {
-    x: origin.x + rect.left,
-    y: origin.y + rect.top,
-    width: rect.width,
-    height: rect.height,
+    x: origin.x + rect.left * origin.scale,
+    y: origin.y + rect.top * origin.scale,
+    width: rect.width * origin.scale,
+    height: rect.height * origin.scale,
   };
 }
 
@@ -58,7 +62,11 @@ export async function detachedPlacementForViewportRect(
   monitors: MonitorDescriptor[],
 ): Promise<DetachedFloatPlacement | undefined> {
   if (monitors.length === 0) return undefined;
-  return detachedPlacementFor(await screenRectForViewportRect(rect), monitors) ?? undefined;
+  return detachedPlacementFor(
+    await screenRectForViewportRect(rect),
+    monitors,
+    resolveWindowControlsPlatform() === "windows" ? "physical" : "logical",
+  );
 }
 
 /**

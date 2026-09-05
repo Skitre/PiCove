@@ -24,12 +24,9 @@ import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import lockfile from "proper-lockfile";
-import type {
-  Credential,
-  CredentialInfo,
-  CredentialStore,
-} from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { resolveCredentialConfigValue } from "./credential-config-value.js";
 import { logger } from "./logger.js";
 
@@ -214,11 +211,9 @@ export class FileCredentialStore implements CredentialStore {
 
   async restore(snapshot: CredentialSnapshot): Promise<void> {
     if (snapshot.path !== this.authPath) {
-      throw new CredentialStoreError(
-        "io",
-        "Credential snapshot belongs to a different auth file",
-        { path: this.authPath },
-      );
+      throw new CredentialStoreError("io", "Credential snapshot belongs to a different auth file", {
+        path: this.authPath,
+      });
     }
     await this.withLock(async () => {
       if (snapshot.content === null) {
@@ -292,7 +287,23 @@ export class FileCredentialStore implements CredentialStore {
       // `open` honours the mode only when it creates the file; enforce it for
       // umask-restricted and pre-existing cases alike.
       await chmod(tempPath, FILE_MODE);
-      await rename(tempPath, this.authPath);
+      // Windows readers/indexers can briefly hold the destination without
+      // delete sharing. Retry the atomic replacement while retaining the lock
+      // and the same fsynced temp file; never unlink the original credential file.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await rename(tempPath, this.authPath);
+          break;
+        } catch (error) {
+          if (
+            process.platform !== "win32" ||
+            !["EPERM", "EACCES", "EBUSY"].includes(errnoCode(error) ?? "") ||
+            attempt >= 6
+          )
+            throw error;
+          await delay(Math.min(20 * 2 ** attempt, 200));
+        }
+      }
     } catch (error) {
       await unlink(tempPath).catch(() => undefined);
       throw this.ioError("rename", error);

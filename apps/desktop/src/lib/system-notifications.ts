@@ -1,5 +1,5 @@
 import type { HostEventEnvelope } from "@pideck/protocol";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { tCurrent } from "./i18n/use-t";
 
 export type SystemNotificationKind =
@@ -208,23 +208,25 @@ export class SystemNotificationController {
   }
 
   async start(): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri() || this.disposed) return;
     try {
       const api = await import("@tauri-apps/plugin-notification");
       const listener = await api.onAction((notification) => {
         const extra = notification.extra;
         if (!isNotificationPayload(extra)) return;
-        void this.options.openTarget(
-          extra.target ?? { workspaceId: null, workspaceRevision: undefined },
-        );
+        if (this.disposed) return;
+        void this.options
+          .openTarget(extra.target ?? { workspaceId: null, workspaceRevision: undefined })
+          .catch(() => undefined);
       });
       if (this.disposed) {
-        listener.unregister();
+        void listener.unregister().catch(() => undefined);
         return;
       }
-      this.actionDisposer = () => listener.unregister();
+      this.actionDisposer = () => void listener.unregister().catch(() => undefined);
     } catch {
-      this.permissionDenied = true;
+      // The desktop plugin can send notifications without implementing action
+      // listeners. Missing click support must never disable notification delivery.
     }
   }
 
@@ -240,6 +242,7 @@ export class SystemNotificationController {
   }
 
   observe(event: HostEventEnvelope): void {
+    if (this.disposed || !isTauri()) return;
     const candidate = this.tracker.observe(event, {
       attention: this.options.attention(),
       targetForSession: this.options.targetForSession,
@@ -249,27 +252,44 @@ export class SystemNotificationController {
   }
 
   private async send(candidate: SystemNotificationCandidate): Promise<void> {
-    if (this.options.attention() !== "background" || !this.options.enabled()) return;
+    if (
+      this.disposed ||
+      this.permissionDenied ||
+      this.options.attention() !== "background" ||
+      !this.options.enabled()
+    )
+      return;
     try {
       const api = await import("@tauri-apps/plugin-notification");
       let granted = await api.isPermissionGranted();
       if (!granted) {
         const permission = await api.requestPermission();
         granted = permission === "granted";
+        this.permissionDenied = permission === "denied";
       }
-      if (!granted) {
-        this.permissionDenied = true;
+      // Permission checks may finish after focus changes or the controller is
+      // disposed. Do not deliver a queued background alert in that case.
+      if (this.disposed || this.options.attention() !== "background" || !this.options.enabled())
         return;
-      }
+      if (!granted) return;
       const copy = systemNotificationCopy(candidate.kind);
-      await api.sendNotification({
-        title: copy.title,
-        body: copy.body,
-        autoCancel: true,
-        extra: { kind: candidate.kind, ...(candidate.target ? { target: candidate.target } : {}) },
+      // The JS sendNotification facade returns void. Await the desktop command
+      // so command failures settle this queue instead of escaping it. The OS
+      // may still suppress a notification after the command has accepted it.
+      await invoke("plugin:notification|notify", {
+        options: {
+          title: copy.title,
+          body: copy.body,
+          autoCancel: true,
+          extra: {
+            kind: candidate.kind,
+            ...(candidate.target ? { target: candidate.target } : {}),
+          },
+        },
       });
     } catch {
-      this.permissionDenied = true;
+      // A transient native delivery error is not a permission denial. Keep the
+      // queue usable so a later response can still notify the user.
     }
   }
 }

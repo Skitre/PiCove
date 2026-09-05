@@ -2,9 +2,10 @@ import type { DetachedFloatPlacement, MonitorDescriptor, ScreenRect } from "@pid
 
 /**
  * Detached Float placement geometry (extension-deck.md, "Detached placement and
- * monitor recovery"). Every value here is in **logical** pixels. The Rust
- * monitor command converts Tauri's physical descriptors exactly once before
- * they cross the IPC boundary; this layer must not divide them a second time.
+ * monitor recovery"). Stored placements and descriptors retain their original
+ * monitor-scaled logical format. Windows native geometry uses physical desktop
+ * pixels: only those coordinates form one space across differently scaled
+ * displays. Convert after selecting a monitor, never before comparing monitors.
  *
  * Pure functions only. A detached Float is positioned from these results; none
  * of them touch a window, the DOM, or settings.
@@ -23,6 +24,20 @@ const DETACHED_MIN_HEIGHT = 96;
 const MONITOR_MATCH_TOLERANCE = 1;
 
 export type Point = { x: number; y: number };
+type ScreenCoordinateSpace = "logical" | "physical";
+
+function scaleRect(rect: ScreenRect, factor: number): ScreenRect {
+  return {
+    x: rect.x * factor,
+    y: rect.y * factor,
+    width: rect.width * factor,
+    height: rect.height * factor,
+  };
+}
+
+function coordinateScale(monitor: MonitorDescriptor, space: ScreenCoordinateSpace): number {
+  return space === "physical" && monitor.scaleFactor > 0 ? monitor.scaleFactor : 1;
+}
 
 export type DetachedPlacementResolution =
   | { status: "placed"; monitor: MonitorDescriptor; rect: ScreenRect }
@@ -113,11 +128,21 @@ export function clampRectToMonitor(rect: ScreenRect, monitor: MonitorDescriptor)
 export function resolveDetachedPlacement(
   placement: DetachedFloatPlacement,
   available: readonly MonitorDescriptor[],
+  space: ScreenCoordinateSpace = "logical",
 ): DetachedPlacementResolution {
   if (available.length === 0) return { status: "reattach", reason: "no-monitors" };
   const monitor = findMonitor(placement.monitor, available);
   if (!monitor) return { status: "reattach", reason: "monitor-missing" };
-  return { status: "placed", monitor, rect: clampRectToMonitor(placement.rect, monitor) };
+  const localRect = {
+    ...placement.rect,
+    x: monitor.position.x + placement.rect.x - placement.monitor.position.x,
+    y: monitor.position.y + placement.rect.y - placement.monitor.position.y,
+  };
+  return {
+    status: "placed",
+    monitor,
+    rect: scaleRect(clampRectToMonitor(localRect, monitor), coordinateScale(monitor, space)),
+  };
 }
 
 function containsPoint(bounds: ScreenRect, point: Point): boolean {
@@ -133,8 +158,11 @@ function containsPoint(bounds: ScreenRect, point: Point): boolean {
 export function monitorForPoint(
   point: Point,
   available: readonly MonitorDescriptor[],
+  space: ScreenCoordinateSpace = "logical",
 ): MonitorDescriptor | undefined {
-  return available.find((monitor) => containsPoint(monitorLogicalBounds(monitor), point));
+  return available.find((monitor) =>
+    containsPoint(scaleRect(monitorLogicalBounds(monitor), coordinateScale(monitor, space)), point),
+  );
 }
 
 function overlapArea(left: ScreenRect, right: ScreenRect): number {
@@ -151,15 +179,19 @@ function overlapArea(left: ScreenRect, right: ScreenRect): number {
 export function monitorForRect(
   rect: ScreenRect,
   available: readonly MonitorDescriptor[],
+  space: ScreenCoordinateSpace = "logical",
 ): MonitorDescriptor | undefined {
   let best: { monitor: MonitorDescriptor; area: number } | undefined;
   for (const monitor of available) {
-    const area = overlapArea(rect, monitorLogicalBounds(monitor));
+    const area = overlapArea(
+      rect,
+      scaleRect(monitorLogicalBounds(monitor), coordinateScale(monitor, space)),
+    );
     if (area > 0 && (!best || area > best.area)) best = { monitor, area };
   }
   if (best) return best.monitor;
   const centre = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-  return monitorForPoint(centre, available) ?? available[0];
+  return monitorForPoint(centre, available, space) ?? available[0];
 }
 
 /**
@@ -169,8 +201,12 @@ export function monitorForRect(
 export function detachedPlacementFor(
   rect: ScreenRect,
   available: readonly MonitorDescriptor[],
+  space: ScreenCoordinateSpace = "logical",
 ): DetachedFloatPlacement | undefined {
-  const monitor = monitorForRect(rect, available);
+  const monitor = monitorForRect(rect, available, space);
   if (!monitor) return undefined;
-  return { monitor, rect: clampRectToMonitor(rect, monitor) };
+  return {
+    monitor,
+    rect: clampRectToMonitor(scaleRect(rect, 1 / coordinateScale(monitor, space)), monitor),
+  };
 }

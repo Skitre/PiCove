@@ -46,6 +46,30 @@ pub struct FloatWindowRect {
     pub height: f64,
 }
 
+/// Windows has one physical desktop coordinate system. On macOS the native
+/// boundary uses logical screen coordinates; saved profiles remain unchanged.
+fn native_bounds(rect: &FloatWindowRect, physical: bool) -> (tauri::Position, tauri::Size) {
+    if physical {
+        (
+            tauri::PhysicalPosition::new(rect.x.round() as i32, rect.y.round() as i32).into(),
+            tauri::PhysicalSize::new(rect.width.round() as u32, rect.height.round() as u32).into(),
+        )
+    } else {
+        (
+            LogicalPosition::new(rect.x, rect.y).into(),
+            LogicalSize::new(rect.width, rect.height).into(),
+        )
+    }
+}
+
+fn apply_bounds(window: &tauri::WebviewWindow, rect: &FloatWindowRect) -> Result<(), String> {
+    let (position, size) = native_bounds(rect, cfg!(target_os = "windows"));
+    window
+        .set_position(position)
+        .map_err(|error| error.to_string())?;
+    window.set_size(size).map_err(|error| error.to_string())
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FloatWindowSnapshot {
@@ -155,8 +179,7 @@ impl ExtensionFloatManager {
         if let Some(existing) = app.get_webview_window(&label) {
             // Reopening a live slot repositions it rather than stacking a second
             // window on the same presentation slot.
-            let _ = existing.set_position(LogicalPosition::new(rect.x, rect.y));
-            let _ = existing.set_size(LogicalSize::new(rect.width, rect.height));
+            apply_bounds(&existing, rect)?;
             let _ = existing.set_always_on_top(always_on_top);
             let _ = existing.show();
             self.windows.insert(slot_id.to_string(), label.clone());
@@ -186,15 +209,21 @@ impl ExtensionFloatManager {
             .parent(&main_window)
             .map_err(|error| error.to_string())?
             .title(title)
-            .inner_size(rect.width, rect.height)
-            .position(rect.x, rect.y)
             .decorations(false)
             .resizable(true)
             .always_on_top(always_on_top)
             .skip_taskbar(false)
-            .visible(true)
+            .visible(false)
             .build()
             .map_err(|error| error.to_string())?;
+        // The builder accepts only logical coordinates. Place the hidden
+        // window with the platform's correct coordinate type before showing it.
+        if let Err(error) = apply_bounds(&window, rect)
+            .and_then(|()| window.show().map_err(|error| error.to_string()))
+        {
+            let _ = window.destroy();
+            return Err(error);
+        }
         let _ = window.set_focus();
         self.windows.insert(slot_id.to_string(), label.clone());
         Ok(FloatWindowSnapshot {
@@ -220,12 +249,7 @@ impl ExtensionFloatManager {
         rect: &FloatWindowRect,
     ) -> Result<(), String> {
         let window = self.window(app, slot_id)?;
-        window
-            .set_position(LogicalPosition::new(rect.x, rect.y))
-            .map_err(|error| error.to_string())?;
-        window
-            .set_size(LogicalSize::new(rect.width, rect.height))
-            .map_err(|error| error.to_string())
+        apply_bounds(&window, rect)
     }
 
     pub fn set_always_on_top(
@@ -279,6 +303,34 @@ fn urlencoding_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_window_bounds_do_not_rescale_windows_desktop_coordinates() {
+        let rect = FloatWindowRect {
+            x: 2200.0,
+            y: 200.0,
+            width: 720.0,
+            height: 480.0,
+        };
+        let (position, size) = native_bounds(&rect, true);
+        assert_eq!(
+            position.to_physical::<i32>(2.0),
+            tauri::PhysicalPosition::new(2200, 200)
+        );
+        assert_eq!(
+            size.to_physical::<u32>(2.0),
+            tauri::PhysicalSize::new(720, 480)
+        );
+        let (position, size) = native_bounds(&rect, false);
+        assert_eq!(
+            position.to_physical::<i32>(2.0),
+            tauri::PhysicalPosition::new(4400, 400)
+        );
+        assert_eq!(
+            size.to_physical::<u32>(2.0),
+            tauri::PhysicalSize::new(1440, 960)
+        );
+    }
 
     #[test]
     fn labels_are_stable_and_distinct_per_slot() {

@@ -67,6 +67,7 @@ import { resolveEffectiveTheme } from "../../lib/theme";
 import { useT } from "../../lib/i18n/use-t";
 import type { MessageKey } from "../../lib/i18n";
 import { closeExtensionTerminalWithFallback } from "../dock/ExtensionTerminal";
+import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 
 type DetachedEntry = { slot: ExtensionPresentationSlot; mount: PresentationSlotMount };
 
@@ -109,12 +110,15 @@ function livePanelContext(requestId: string) {
  */
 export function ExtensionFloatWindowController() {
   const t = useT();
+  const coordinateSpace = resolveWindowControlsPlatform() === "windows" ? "physical" : "logical";
   const slots = useLiveExtensionPresentationSlots();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
   const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
 
   /** slotId → window label, for windows this controller opened. */
   const open = useRef(new Map<string, string>());
+  const reconcileQueue = useRef<Promise<void>>(Promise.resolve());
+  const mounted = useRef(false);
   const lastContent = useRef(new Map<string, FloatContentMessage>());
   /** Placements derived for floats the user has never positioned. Memory only. */
   const promoted = useRef(new Map<string, DetachedFloatPlacement>());
@@ -131,6 +135,22 @@ export function ExtensionFloatWindowController() {
   // the count itself is never read.
   const rerender = useState(0)[1];
   const [monitorTopologyKey, setMonitorTopologyKey] = useState("");
+
+  useEffect(() => {
+    mounted.current = true;
+    const windows = open.current;
+    return () => {
+      mounted.current = false;
+      // Wait for in-flight native creation before releasing ownership. A
+      // StrictMode remount takes ownership back before this cleanup runs.
+      reconcileQueue.current = reconcileQueue.current.then(async () => {
+        if (mounted.current) return;
+        for (const slotId of windows.keys()) await closeFloatWindow(slotId);
+        windows.clear();
+        setWindowedFloats([]);
+      });
+    };
+  }, []);
 
   // Every float wants a window now, whether or not it already carries a
   // placement: a float with none is one the user has not positioned yet (an
@@ -202,80 +222,86 @@ export function ExtensionFloatWindowController() {
   // Reconcile windows against the detached slots that currently have content.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const live = monitors.current;
-      const wanted = new Set<string>();
-
-      for (const { slot, mount } of entries.current) {
-        if (mount.home.kind !== "float") continue;
-        // A float with no stored placement gets one derived from where it is
-        // drawn right now, held in memory only. Persisting it here would turn a
-        // resolver default into a saved preference behind the user's back; the
-        // geometry intent already persists it once the user moves the window.
-        let placement = mount.home.detached ?? promoted.current.get(slot.slotId);
-        if (!placement) {
-          const viewport = { width: window.innerWidth, height: window.innerHeight };
-          const pixel = floatRectToPixels(mount.home.rect, viewport);
-          placement = await detachedPlacementForViewportRect(pixel, live);
-          if (cancelled) return;
-          if (placement) promoted.current.set(slot.slotId, placement);
-        }
-        if (!placement) continue;
-        const resolved = resolveDetachedPlacement(placement, live);
-        if (resolved.status === "reattach") {
-          // The display this Float lived on is gone. Nothing is written: the
-          // placement is exactly where the user put it, and the window reopens
-          // there when the display returns. Until then the in-window layer
-          // draws the float, because it is missing from `wanted`.
-          continue;
-        }
-        wanted.add(slot.slotId);
-        if (open.current.has(slot.slotId)) {
-          void setFloatWindowAlwaysOnTop(slot.slotId, mount.home.pinned === true);
-          // The stored placement can change without the user touching the
-          // window — Undo is the obvious case. Move the window to match, but
-          // only on a real difference, so a geometry report cannot echo back
-          // into the drag the user is still performing.
-          const applied = appliedRect.current.get(slot.slotId);
-          if (!applied || !sameScreenRect(applied, resolved.rect)) {
-            appliedRect.current.set(slot.slotId, resolved.rect);
-            void setFloatWindowBounds(slot.slotId, resolved.rect);
-          }
-          continue;
-        }
-        const snapshot = await openFloatWindow({
-          slotId: slot.slotId,
-          rect: resolved.rect,
-          title: floatTitle(slot),
-          alwaysOnTop: mount.home.pinned === true,
-        });
+    // Serializing native operations prevents a stale close from destroying a
+    // newer open for the same label. Cancelled opens still enter the ownership
+    // map so the next reconciliation (or unmount cleanup) can release them.
+    reconcileQueue.current = reconcileQueue.current
+      .then(async () => {
         if (cancelled) return;
-        if (snapshot) {
-          open.current.set(slot.slotId, snapshot.label);
-          appliedRect.current.set(slot.slotId, resolved.rect);
+        const live = monitors.current;
+        const wanted = new Set<string>();
+
+        for (const { slot, mount } of entries.current) {
+          if (mount.home.kind !== "float") continue;
+          // A float with no stored placement gets one derived from where it is
+          // drawn right now, held in memory only. Persisting it here would turn a
+          // resolver default into a saved preference behind the user's back; the
+          // geometry intent already persists it once the user moves the window.
+          let placement = mount.home.detached ?? promoted.current.get(slot.slotId);
+          if (!placement) {
+            const viewport = { width: window.innerWidth, height: window.innerHeight };
+            const pixel = floatRectToPixels(mount.home.rect, viewport);
+            placement = await detachedPlacementForViewportRect(pixel, live);
+            if (cancelled) return;
+            if (placement) promoted.current.set(slot.slotId, placement);
+          }
+          if (!placement) continue;
+          const resolved = resolveDetachedPlacement(placement, live, coordinateSpace);
+          if (resolved.status === "reattach") {
+            // The display this Float lived on is gone. Nothing is written: the
+            // placement is exactly where the user put it, and the window reopens
+            // there when the display returns. Until then the in-window layer
+            // draws the float, because it is missing from `wanted`.
+            continue;
+          }
+          wanted.add(slot.slotId);
+          if (open.current.has(slot.slotId)) {
+            void setFloatWindowAlwaysOnTop(slot.slotId, mount.home.pinned === true);
+            // The stored placement can change without the user touching the
+            // window — Undo is the obvious case. Move the window to match, but
+            // only on a real difference, so a geometry report cannot echo back
+            // into the drag the user is still performing.
+            const applied = appliedRect.current.get(slot.slotId);
+            if (!applied || !sameScreenRect(applied, resolved.rect)) {
+              appliedRect.current.set(slot.slotId, resolved.rect);
+              void setFloatWindowBounds(slot.slotId, resolved.rect);
+            }
+            continue;
+          }
+          const snapshot = await openFloatWindow({
+            slotId: slot.slotId,
+            rect: resolved.rect,
+            title: floatTitle(slot),
+            alwaysOnTop: mount.home.pinned === true,
+          });
+          if (snapshot) {
+            open.current.set(slot.slotId, snapshot.label);
+            appliedRect.current.set(slot.slotId, resolved.rect);
+          }
+          if (cancelled) return;
         }
-      }
 
-      // A slot whose content ended, or that is no longer detached, releases its
-      // window. The preference survives; only the shell goes away.
-      for (const slotId of [...open.current.keys()]) {
-        if (wanted.has(slotId)) continue;
-        open.current.delete(slotId);
-        lastContent.current.delete(slotId);
-        appliedRect.current.delete(slotId);
-        promoted.current.delete(slotId);
-        void closeFloatWindow(slotId);
-      }
+        // A slot whose content ended, or that is no longer detached, releases its
+        // window. The preference survives; only the shell goes away.
+        for (const slotId of [...open.current.keys()]) {
+          if (wanted.has(slotId)) continue;
+          open.current.delete(slotId);
+          lastContent.current.delete(slotId);
+          appliedRect.current.delete(slotId);
+          promoted.current.delete(slotId);
+          await closeFloatWindow(slotId);
+        }
 
-      // Publish what actually has a window, not what wanted one: a platform
-      // that refused, or no desktop runtime at all, must still leave the float
-      // visible in the main window rather than nowhere.
-      setWindowedFloats(open.current.keys());
-    })();
+        // Publish what actually has a window, not what wanted one: a platform
+        // that refused, or no desktop runtime at all, must still leave the float
+        // visible in the main window rather than nowhere.
+        setWindowedFloats(open.current.keys());
+      })
+      .catch(notifyDesktopSettingsSaveFailure);
     return () => {
       cancelled = true;
     };
-  }, [detachedKey, monitorTopologyKey]);
+  }, [detachedKey, monitorTopologyKey, coordinateSpace]);
 
   // Push content whenever what a Float should draw actually changes.
   useEffect(() => {
@@ -390,7 +416,7 @@ export function ExtensionFloatWindowController() {
         case "geometry": {
           const extensionId = slot.extensionId;
           if (!extensionId) return;
-          const placement = detachedPlacementFor(intent.rect, monitors.current);
+          const placement = detachedPlacementFor(intent.rect, monitors.current, coordinateSpace);
           if (!placement) return;
           // Moving or resizing a native window is routine placement memory,
           // not a presentation change that needs another Undo toast.
@@ -468,7 +494,7 @@ export function ExtensionFloatWindowController() {
     };
     // A `useState` setter is stable for the component's lifetime, so listing it
     // cannot re-subscribe; it only satisfies the rule.
-  }, [rerender]);
+  }, [rerender, coordinateSpace]);
 
   return null;
 }

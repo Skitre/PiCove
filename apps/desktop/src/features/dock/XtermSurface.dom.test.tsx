@@ -180,11 +180,7 @@ describe("XtermSurface font readiness", () => {
     expect(mocks.terminal.focus).not.toHaveBeenCalled();
 
     view.rerender(
-      <XtermSurface
-        sessionKey="terminal-test"
-        visible
-        connect={vi.fn(async () => undefined)}
-      />,
+      <XtermSurface sessionKey="terminal-test" visible connect={vi.fn(async () => undefined)} />,
     );
     await waitFor(() => expect(mocks.terminal.focus).toHaveBeenCalledTimes(1));
   });
