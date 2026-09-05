@@ -16,6 +16,8 @@ const MAIN_WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+// Keep the IPC argument shape on every platform; only AppKit reads the fields.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct DesktopWindowBounds {
     pub x: i32,
     pub y: i32,
