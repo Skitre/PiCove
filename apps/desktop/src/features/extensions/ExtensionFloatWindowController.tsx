@@ -10,6 +10,7 @@ import { observedExtensionDisplayName } from "../../lib/extension-ui-observation
 import {
   canonicalExtensionUiSettings,
   notifyDesktopSettingsSaveFailure,
+  persistExtensionUiSettings,
 } from "../../lib/desktop-settings";
 import {
   appendFrameTail,
@@ -54,7 +55,7 @@ import {
   isLegalPresentationChoice,
   presentationHomeFromChoice,
 } from "../../lib/extension-ui-presentation";
-import { commitExtensionPresentationHome } from "../../lib/extension-ui-profile";
+import { commitExtensionPresentationHome, withFamilyHome } from "../../lib/extension-ui-profile";
 import {
   mountsForHome,
   type ExtensionPresentationSlot,
@@ -387,9 +388,15 @@ export function ExtensionFloatWindowController() {
           return;
         }
         case "geometry": {
+          const extensionId = slot.extensionId;
+          if (!extensionId) return;
           const placement = detachedPlacementFor(intent.rect, monitors.current);
           if (!placement) return;
-          commitHome(slot, { ...home, detached: placement }, "extensionUiChangedHome");
+          // Moving or resizing a native window is routine placement memory,
+          // not a presentation change that needs another Undo toast.
+          void persistExtensionUiSettings((current) =>
+            withFamilyHome(current, extensionId, slot.family, { ...home, detached: placement }),
+          ).catch(notifyDesktopSettingsSaveFailure);
           return;
         }
         case "widgetAction": {

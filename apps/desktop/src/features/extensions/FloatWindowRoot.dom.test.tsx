@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
 
 const nativeWindow = vi.hoisted(() => ({
   closeRequested: null as ((event: { preventDefault: () => void }) => void) | null,
+  startDragging: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -29,7 +30,7 @@ vi.mock("@tauri-apps/api/window", () => ({
         nativeWindow.closeRequested = null;
       });
     },
-    startDragging: () => Promise.resolve(),
+    startDragging: nativeWindow.startDragging,
     setTheme: () => Promise.resolve(),
   }),
 }));
@@ -89,6 +90,7 @@ beforeEach(() => {
   transport.intents.length = 0;
   transport.content = null;
   nativeWindow.closeRequested = null;
+  nativeWindow.startDragging.mockClear();
 });
 
 afterEach(() => {
@@ -99,6 +101,54 @@ afterEach(() => {
 });
 
 describe("FloatWindowRoot placement", () => {
+  it("drags from blank body space as well as the title bar", async () => {
+    const { container } = render(<FloatWindowRoot slotId={SLOT} />);
+    await publish(contentMessage());
+
+    await userEvent.pointer({
+      target: container.querySelector("[data-extension-float-body]")!,
+      keys: "[MouseLeft]",
+    });
+    expect(nativeWindow.startDragging).toHaveBeenCalledTimes(1);
+
+    await userEvent.pointer({
+      target: screen.getByText("pi-subagents Widget"),
+      keys: "[MouseLeft]",
+    });
+    expect(nativeWindow.startDragging).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves text selection and secondary clicks in the body", async () => {
+    const { container } = render(<FloatWindowRoot slotId={SLOT} />);
+    await publish(contentMessage());
+
+    await userEvent.pointer([
+      { target: screen.getByText("ready"), offset: 0, keys: "[MouseLeft>]" },
+      { offset: 5 },
+      { keys: "[/MouseLeft]" },
+    ]);
+    expect(window.getSelection()?.toString()).toBe("ready");
+    await userEvent.pointer({
+      target: container.querySelector("[data-extension-float-body]")!,
+      keys: "[MouseRight]",
+    });
+    expect(nativeWindow.startDragging).not.toHaveBeenCalled();
+  });
+
+  it("drags the padding around a custom terminal without taking its pointer input", async () => {
+    const { container } = render(<FloatWindowRoot slotId={SLOT} />);
+    await publish(contentMessage({ family: "custom", body: { kind: "custom", requestId: "r1" } }));
+
+    await userEvent.pointer({ target: screen.getByTestId("float-xterm"), keys: "[MouseLeft]" });
+    expect(nativeWindow.startDragging).not.toHaveBeenCalled();
+
+    await userEvent.pointer({
+      target: container.querySelector("[data-extension-float-body]")!,
+      keys: "[MouseLeft]",
+    });
+    expect(nativeWindow.startDragging).toHaveBeenCalledOnce();
+  });
+
   it("sends a collapse intent and reflects the main window's collapsed state", async () => {
     render(<FloatWindowRoot slotId={SLOT} />);
     await publish(contentMessage());
@@ -107,6 +157,7 @@ describe("FloatWindowRoot placement", () => {
     expect(collapse).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("ready")).toBeInTheDocument();
     await userEvent.click(collapse);
+    expect(nativeWindow.startDragging).not.toHaveBeenCalled();
     expect(transport.intents).toContainEqual({
       kind: "toggleWidgetCollapsed",
       slotId: SLOT,
@@ -161,6 +212,7 @@ describe("FloatWindowRoot placement", () => {
       screen.getByRole("button", { name: "Change where pi-subagents Widget is shown" }),
     );
     await userEvent.click(screen.getByRole("menuitem", { name: "Extensions Dock · primary" }));
+    expect(nativeWindow.startDragging).not.toHaveBeenCalled();
 
     expect(transport.intents.filter((intent) => intent.kind !== "hello")).toEqual([
       { kind: "setPlacement", slotId: SLOT, choice: "dockPrimary" },
@@ -194,6 +246,7 @@ describe("FloatWindowRoot placement", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(nativeWindow.startDragging).not.toHaveBeenCalled();
     expect(transport.intents).toContainEqual({
       kind: "widgetAction",
       slotId: SLOT,

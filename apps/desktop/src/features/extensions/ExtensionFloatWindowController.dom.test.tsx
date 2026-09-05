@@ -1,15 +1,18 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { DEFAULT_EXTENSION_UI_SETTINGS, type MonitorDescriptor } from "@pideck/protocol";
 import type { FloatIntent } from "../../lib/extension-float-channel";
 import type { ExtensionPresentationSlot } from "../../lib/extension-ui-slots";
 import { useAppStore } from "../../lib/stores/app-store";
+import { clearExtensionUiUndo, getExtensionUiUndo } from "../../lib/extension-ui-profile";
 import { ExtensionFloatWindowController } from "./ExtensionFloatWindowController";
 
 const fixture = vi.hoisted(() => ({
   slots: [] as ExtensionPresentationSlot[],
   onIntent: null as ((intent: FloatIntent) => void) | null,
   dispatch: vi.fn(async () => null),
+  monitors: [] as MonitorDescriptor[],
 }));
 
 vi.mock("../../lib/extension-widget-action", () => ({
@@ -22,7 +25,7 @@ vi.mock("../dock/ExtensionTerminal", () => ({
   closeExtensionTerminalWithFallback: async () => null,
 }));
 vi.mock("../../lib/extension-float-transport", () => ({
-  listFloatMonitors: async () => [],
+  listFloatMonitors: async () => fixture.monitors,
   openFloatWindow: async () => null,
   closeFloatWindow: async () => {},
   setFloatWindowBounds: async () => {},
@@ -69,6 +72,8 @@ function slot(extensionId?: string): ExtensionPresentationSlot {
 }
 
 beforeEach(() => {
+  clearExtensionUiUndo();
+  fixture.monitors = [];
   fixture.slots = [slot("ext_a"), slot("ext_b"), slot()];
   fixture.dispatch.mockClear();
   useAppStore.setState({
@@ -78,6 +83,58 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+
+it("remembers native moves and resizes without offering Undo, while placement changes still do", async () => {
+  const monitor: MonitorDescriptor = {
+    name: "Display",
+    position: { x: 0, y: 0 },
+    size: { width: 1512, height: 982 },
+    scaleFactor: 2,
+  };
+  fixture.monitors = [monitor];
+  const entry = slot("ext_a");
+  const home = {
+    kind: "float" as const,
+    rect: { x: 0.1, y: 0.1, width: 360, height: 240 },
+    detached: { rect: { x: 100, y: 100, width: 360, height: 240 }, monitor },
+  };
+  entry.mounts[0]!.home = home;
+  fixture.slots = [entry];
+  useAppStore.getState().setDesktopSettings({
+    theme: "dark",
+    restoreLastSession: true,
+    autoRestartHostOnce: true,
+    extensionDecisionPresentation: "auto",
+    terminalProfile: "auto",
+    extensionUi: {
+      ...DEFAULT_EXTENSION_UI_SETTINGS,
+      presentations: { ext_a: { widget: { home } } },
+    },
+  });
+  render(<ExtensionFloatWindowController />);
+  await waitFor(() => expect(fixture.onIntent).not.toBeNull());
+
+  for (const rect of [
+    { x: 200, y: 180, width: 360, height: 240 },
+    { x: 200, y: 180, width: 480, height: 320 },
+  ]) {
+    await act(async () => {
+      fixture.onIntent?.({ kind: "geometry", slotId: entry.slotId, rect });
+    });
+    await waitFor(() =>
+      expect(
+        useAppStore.getState().desktopSettings?.extensionUi?.presentations.ext_a?.widget,
+      ).toMatchObject({ home: { detached: { rect } } }),
+    );
+    expect(getExtensionUiUndo()).toBeNull();
+  }
+
+  await act(async () => {
+    fixture.onIntent?.({ kind: "setPlacement", slotId: entry.slotId, choice: "dockPrimary" });
+  });
+  await waitFor(() => expect(getExtensionUiUndo()).not.toBeNull());
+  clearExtensionUiUndo();
+});
 
 it("derives the publisher from the main-owned slot even if the Float supplies another identity", async () => {
   render(<ExtensionFloatWindowController />);

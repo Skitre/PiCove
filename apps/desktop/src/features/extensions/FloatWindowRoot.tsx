@@ -230,16 +230,23 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
   }, [slotId]);
 
   /**
-   * Batch 5 has no drag gesture, so the title bar hands the drag to the
+   * The title bar and blank space around the content hand dragging to the
    * platform. Batch 6 replaces this with pointer-driven positioning: a native
    * drag loop delivers no pointer movement, so it cannot hit-test the main
    * window's drop targets.
    */
-  const onTitleBarPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const startWindowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     void import("@tauri-apps/api/window")
       .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
       .catch(() => undefined);
+  };
+
+  const onBodyPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Only the shell's own blank space moves the window. Content and its
+    // scrollbar keep their native selection, scrolling, and input gestures.
+    if (event.target !== event.currentTarget) return;
+    startWindowDrag(event);
   };
 
   const label = message?.chrome.label ?? slotId;
@@ -250,7 +257,7 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
       data-extension-float-window={slotId}
       className="flex h-screen w-screen flex-col overflow-hidden border border-border bg-surface-raised"
     >
-      <ExtensionFloatTitleBar label={label} onPointerDown={onTitleBarPointerDown}>
+      <ExtensionFloatTitleBar label={label} onPointerDown={startWindowDrag}>
         <ExtensionFloatTitleBarButton
           label={t(pinned ? "extensionUiFloatUnpin" : "extensionUiFloatPin", {
             name: label,
@@ -273,13 +280,23 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
         />
       </ExtensionFloatTitleBar>
       <div
+        data-extension-float-body
+        onPointerDown={onBodyPointerDown}
         className={
           message?.body.kind === "custom"
-            ? "flex min-h-0 flex-1 overflow-hidden"
-            : "min-h-0 flex-1 overflow-auto px-3 py-2"
+            ? "flex min-h-0 flex-1 cursor-grab flex-col p-2"
+            : "flex min-h-0 flex-1 cursor-grab flex-col px-3 py-2"
         }
       >
-        <FloatBody message={message} waiting={t("extensionUiFloatWaiting")} />
+        <div
+          className={
+            message?.body.kind === "custom"
+              ? "flex min-h-0 flex-1 cursor-auto overflow-hidden"
+              : "min-h-0 cursor-auto overflow-auto"
+          }
+        >
+          <FloatBody message={message} waiting={t("extensionUiFloatWaiting")} />
+        </div>
       </div>
       <MenuHost />
     </div>

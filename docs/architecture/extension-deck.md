@@ -792,6 +792,12 @@ PiDeck never covers an unpinned float. The `pinned` preference separately enable
 OS always-on-top above other applications. Native ownership also follows the
 platform's parent-window movement and minimization behavior.
 
+The title bar and blank space around and below the content move the detached
+window. Content, controls, scrollbars, and terminal input retain their own
+pointer gestures. Native moves and resizes silently remember the final geometry;
+they do not create or refresh an Undo toast. Changing presentation destinations
+still offers Undo.
+
 | Concern        | Rule                                                                                                                                                                                                       |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Window         | One Tauri window per detached slot, undecorated, labelled from the slot id, loading the same frontend bundle under a `surface=float` entry point that mounts a float root instead of the application shell |
@@ -1304,8 +1310,9 @@ feature is possible:
 5. A Settings change rehomes current non-blocking content immediately and
    applies to every session/workspace. A blocking-dialog change applies to the
    next Host-routed request; an already-published request does not move locally.
-6. A completed widget/`custom()` drag or Float resize updates global Settings,
-   displays “applies to all sessions,” and supports Undo.
+6. A completed in-window widget/`custom()` drag or Float resize updates global
+   Settings, displays “applies to all sessions,” and supports Undo. Native
+   detached-window moves and resizes save silently.
 7. Switching sessions loads no presentation layout and never changes the saved
    location of an Extension family.
 8. Missing content leaves no empty Float, Dock tab, or anchor block; blocking
@@ -1351,7 +1358,8 @@ feature is possible:
     No window is ever created off-screen or silently moved to another monitor.
 24. Tear-off and re-attach commit exactly one settings write on release, show
     the “applies to all sessions” toast, and support Undo. Moving a detached
-    window writes once on release, never continuously.
+    window or resizing it saves the settled geometry silently, without an Undo
+    toast or continuous writes.
 25. Escape during either gesture restores the pre-drag container and placement.
 26. A still-live `custom()` request is never left without a reachable surface by
     detaching, re-attaching, monitor loss, or window destruction.
