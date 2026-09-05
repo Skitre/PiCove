@@ -128,6 +128,30 @@ pub async fn desktop_open_path(webview: tauri::Webview, path: String) -> Result<
     open_in_file_manager(target)
 }
 
+#[tauri::command]
+pub fn desktop_allow_exit(
+    webview: tauri::Webview,
+    state: State<'_, AppState>,
+    approved: bool,
+) -> Result<(), String> {
+    require_main_webview(&webview)?;
+    state
+        .exit_approved
+        .store(approved, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn desktop_exit(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    desktop_allow_exit(webview, state, true)?;
+    app.exit(0);
+    Ok(())
+}
+
 const MAX_SMALL_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_SMALL_TEXT_BYTES: u64 = 256 * 1024;
 

@@ -15,10 +15,12 @@ use draft_store::DraftStore;
 use extension_float::ExtensionFloatManager;
 use pi_host::PiHostManager;
 use shell_terminal::ShellTerminalManager;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Listener, Manager};
 use tokio::sync::Mutex;
 
 pub struct AppState {
+    pub exit_approved: AtomicBool,
     pub settings: Mutex<DesktopSettingsStore>,
     pub drafts: Mutex<DraftStore>,
     pub host: Mutex<PiHostManager>,
@@ -44,6 +46,7 @@ pub fn run() {
             let drafts = DraftStore::load(app.handle());
             let host = PiHostManager::new(app.handle().clone(), &settings);
             app.manage(AppState {
+                exit_approved: AtomicBool::new(false),
                 settings: Mutex::new(settings),
                 drafts: Mutex::new(drafts),
                 host: Mutex::new(host),
@@ -147,6 +150,8 @@ pub fn run() {
             commands::desktop_drafts_get,
             commands::desktop_drafts_apply,
             commands::desktop_open_path,
+            commands::desktop_allow_exit,
+            commands::desktop_exit,
             commands::desktop_read_small_file,
             commands::desktop_window_set_bounds,
             commands::pi_host_send,
@@ -182,8 +187,20 @@ pub fn run() {
                 ..
             } if system_tray::should_hide_on_close(&label) => {
                 api.prevent_close();
-                if let Some(window) = app_handle.get_webview_window(&label) {
-                    let _ = window.hide();
+                // The frontend checks unsaved file edits before hiding to tray.
+            }
+            tauri::RunEvent::ExitRequested { api, .. }
+                if app_handle.get_webview_window("main").is_some()
+                    && !app_handle
+                        .state::<AppState>()
+                        .exit_approved
+                        .load(Ordering::SeqCst) =>
+            {
+                api.prevent_exit();
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.emit("desktop-quit-requested", ());
                 }
             }
             tauri::RunEvent::Exit => {

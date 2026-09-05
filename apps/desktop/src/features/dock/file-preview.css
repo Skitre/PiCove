@@ -1,0 +1,174 @@
+.file-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.file-merge .cm-mergeView {
+  height: 100%;
+}
+.file-merge .cm-mergePane {
+  min-width: 0;
+  overflow: auto;
+}
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer ::selection {
+  background: #0080ff60;
+}
+.cm-editor {
+  --file-keyword: #d3a5f7;
+  --file-string: #91d5a4;
+  --file-number: #eaba7c;
+  --file-type: #71d7d5;
+  --file-function: #a6c6ff;
+}
+.light .cm-editor {
+  --file-keyword: #7b368c;
+  --file-string: #247047;
+  --file-number: #9b5916;
+  --file-type: #16757c;
+  --file-function: #315fa2;
+}
+.file-live-editor .cm-gutters {
+  display: none;
+}
+.file-live-editor .cm-editor {
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+.file-live-editor .cm-scroller {
+  font-family: var(--font-sans);
+  line-height: 1.75;
+}
+.file-live-editor .cm-content {
+  padding: 16px 20px 80px;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+}
+.file-live-editor .cm-line {
+  padding: 0;
+}
+.file-live-editor .cm-activeLine {
+  background: transparent;
+}
+.file-live-editor .file-live-h1 {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.45;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.file-live-editor .file-live-h2 {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.45;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.file-live-editor .file-live-h3 {
+  font-size: 18px;
+  font-weight: 650;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.file-live-editor :is(.file-live-h4, .file-live-h5, .file-live-h6) {
+  font-size: 15px;
+  font-weight: 650;
+}
+.file-live-strong {
+  font-weight: 700;
+}
+.file-live-emphasis {
+  font-style: italic;
+}
+.file-live-strike {
+  text-decoration: line-through;
+}
+.file-live-code {
+  font-family: var(--font-mono);
+  background: var(--color-surface-overlay);
+  border-radius: 3px;
+  padding: 1px 2px;
+}
+.file-live-link {
+  color: var(--file-function);
+  text-decoration: underline;
+}
+.file-live-editor .file-live-quote {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 12px;
+  color: var(--color-muted);
+}
+.file-live-editor .file-live-list {
+  padding-left: 8px;
+}
+.file-live-editor .file-live-fenced-code {
+  background: var(--color-surface-raised);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 0 10px;
+}
+.file-live-bullet {
+  display: inline-block;
+  width: 12px;
+}
+.file-live-bullet::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+}
+.file-live-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 4px 0 0;
+  vertical-align: middle;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+.file-live-block {
+  padding: 8px 0;
+  cursor: text;
+}

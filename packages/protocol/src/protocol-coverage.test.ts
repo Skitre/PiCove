@@ -85,6 +85,12 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "workspace.getCurrent": null,
   "workspace.searchFiles": { query: "src" },
   "workspace.listDirectory": { path: "src" },
+  "workspace.readFilePreview": { path: "src/index.ts" },
+  "workspace.writeTextFile": {
+    path: "src/index.ts",
+    text: "hello",
+    expectedVersion: "a".repeat(64),
+  },
   "workspace.setDirectoryWatches": { paths: ["", "src"] },
   "git.getStatus": null,
   "git.setWatching": { enabled: true },
@@ -276,7 +282,10 @@ function invalidParams(method: HostMethod): unknown {
     case "session.searchAll":
       return { query: "   " };
     case "workspace.listDirectory":
+    case "workspace.readFilePreview":
       return { path: 1 };
+    case "workspace.writeTextFile":
+      return { path: "src/index.ts", text: "hello", expectedVersion: 1 };
     case "workspace.setDirectoryWatches":
       return { paths: ["src", 1] };
     case "git.setWatching":

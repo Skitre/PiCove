@@ -6,6 +6,8 @@ import { createTauriTransport } from "../lib/bridge/tauri-transport";
 import { RecoveryEventBuffer, fullRehydrate } from "../lib/bridge/rehydrate";
 import { Sidebar } from "../components/Sidebar";
 import { RightDock } from "../components/RightDock";
+import { FileEditorDialogs } from "../features/dock/FileEditorDialogs";
+import { fileWorkspaceForRecovery } from "../features/dock/file-session";
 import {
   WindowControls,
   resolveWindowControlsPlatform,
@@ -1028,8 +1030,9 @@ export function App() {
                   }
                   useAppStore.getState().beginHostEpoch(status);
                   const configuredSettings = useAppStore.getState().desktopSettings;
-                  const configuredWorkspace =
-                    configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace;
+                  const configuredWorkspace = fileWorkspaceForRecovery(
+                    configuredSettings?.defaultWorkspace ?? configuredSettings?.lastWorkspace,
+                  );
                   const sessionPathToRestore = configuredSettings?.restoreLastSession
                     ? configuredSettings.lastSessionPath
                     : undefined;
@@ -1383,6 +1386,7 @@ export function App() {
       data-desynchronized={desynchronized ? "true" : "false"}
     >
       <DraftPersistenceController />
+      <FileEditorDialogs />
       <ExtensionFloatWindowController />
       {shouldRenderWindowControls(windowControlsPlatform, settingsOverlayOpen) && (
         <WindowControls

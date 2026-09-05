@@ -351,9 +351,19 @@ export function validateRequestParams<M extends HostMethod>(
         ? ok(params)
         : fail("invalid session.searchAll params", { method });
     case "workspace.listDirectory":
+    case "workspace.readFilePreview":
       return exactObject(params, ["path"]) && isString(params.path)
         ? ok(params)
         : fail("invalid workspace.listDirectory params", { method });
+    case "workspace.writeTextFile":
+      return exactObject(params, ["path", "text", "expectedVersion"]) &&
+        isString(params.path) &&
+        isString(params.text) &&
+        params.text.length <= 1024 * 1024 &&
+        isString(params.expectedVersion) &&
+        /^[a-f0-9]{64}$/.test(params.expectedVersion)
+        ? ok(params)
+        : fail("invalid workspace.writeTextFile params", { method });
     case "workspace.setDirectoryWatches":
       return exactObject(params, ["paths"]) &&
         Array.isArray(params.paths) &&

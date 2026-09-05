@@ -2,6 +2,7 @@
  * Method/event maps for fully typed cross-process envelopes (R2).
  */
 import type { HostError, JsonValue } from "./errors.js";
+import type { WorkspaceFilePreview, WorkspaceTextFile } from "./file-preview.js";
 import type { HostMethod } from "./methods.js";
 import type { HostEventName } from "./events.js";
 import type {
@@ -76,6 +77,8 @@ export type HostContextMap = {
   "workspace.getCurrent": WorkspaceContext;
   "workspace.searchFiles": WorkspaceContext;
   "workspace.listDirectory": WorkspaceContext;
+  "workspace.readFilePreview": WorkspaceContext;
+  "workspace.writeTextFile": WorkspaceContext;
   "workspace.setDirectoryWatches": WorkspaceContext;
   "git.getStatus": WorkspaceContext;
   "git.setWatching": WorkspaceContext;
@@ -180,6 +183,8 @@ export type HostRequestParams = {
   "workspace.getCurrent": null;
   "workspace.searchFiles": { query: string; limit?: number };
   "workspace.listDirectory": { path: string };
+  "workspace.readFilePreview": { path: string };
+  "workspace.writeTextFile": { path: string; text: string; expectedVersion: string };
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": null;
   "git.setWatching": { enabled: boolean };
@@ -329,6 +334,8 @@ export type HostResultMap = {
   };
   "workspace.setDirectoryWatches": { paths: string[] };
   "git.getStatus": GitStatusSnapshot;
+  "workspace.readFilePreview": WorkspaceFilePreview;
+  "workspace.writeTextFile": WorkspaceTextFile;
   "git.setWatching": { watching: boolean; snapshot: GitStatusSnapshot | null };
   "git.getDiff": GitDiffSnapshot;
   "git.mutateHunk": GitMutationResult;

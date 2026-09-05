@@ -6,6 +6,7 @@ import {
 } from "../lib/draft-persistence";
 import { draftKeyForTarget, draftTargetFor } from "../lib/draft-target";
 import { useAppStore } from "../lib/stores/app-store";
+import { ensureFileCanLeave, fileIsDirty } from "../features/dock/file-session";
 
 export function shouldAwaitDraftFlushOnClose(
   tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM,
@@ -77,27 +78,67 @@ export function DraftPersistenceController() {
       if (document.visibilityState === "hidden") void flushDraftWrites();
     };
     const flushOnPageHide = () => void flushDraftWrites();
+    const preventUnsavedReload = (event: BeforeUnloadEvent) => {
+      if (fileIsDirty()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", preventUnsavedReload);
     document.addEventListener("visibilitychange", flushWhenHidden);
     window.addEventListener("pagehide", flushOnPageHide);
     return () => {
       document.removeEventListener("visibilitychange", flushWhenHidden);
       window.removeEventListener("pagehide", flushOnPageHide);
+      window.removeEventListener("beforeunload", preventUnsavedReload);
       void flushDraftWrites();
     };
   }, []);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window) || !shouldAwaitDraftFlushOnClose()) return;
+    if (!("__TAURI_INTERNALS__" in window)) return;
     let disposed = false;
+    let closing = false;
     let stopListening = () => {};
     void (async () => {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const { listen } = await import("@tauri-apps/api/event");
+      const { invoke } = await import("@tauri-apps/api/core");
       const appWindow = getCurrentWindow();
       const unlisten = await appWindow.onCloseRequested(async (event) => {
-        await closeWindowAfterDraftFlush(event, appWindow);
+        event.preventDefault();
+        if (closing) return;
+        closing = true;
+        try {
+          if (!shouldAwaitDraftFlushOnClose()) await settleDraftWritesWithin();
+          if (!(await ensureFileCanLeave())) return;
+          if (shouldAwaitDraftFlushOnClose()) await closeWindowAfterDraftFlush(event, appWindow);
+          else {
+            await appWindow.hide();
+          }
+        } finally {
+          closing = false;
+        }
       });
-      if (disposed) unlisten();
-      else stopListening = unlisten;
+      const unlistenQuit = await listen("desktop-quit-requested", async () => {
+        if (closing) return;
+        closing = true;
+        try {
+          await settleDraftWritesWithin();
+          if (!(await ensureFileCanLeave())) return;
+          await invoke("desktop_exit");
+        } finally {
+          closing = false;
+        }
+      });
+      if (disposed) {
+        unlisten();
+        unlistenQuit();
+      } else
+        stopListening = () => {
+          unlisten();
+          unlistenQuit();
+        };
     })().catch(() => undefined);
     return () => {
       disposed = true;

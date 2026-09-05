@@ -1,4 +1,5 @@
 export * from "./errors.js";
+export * from "./file-preview.js";
 export * from "./types.js";
 export * from "./provider-thinking.js";
 export * from "./model-thinking-profiles.js";

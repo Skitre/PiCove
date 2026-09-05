@@ -201,6 +201,11 @@ export class HostClient {
     params: HostRequestParams[M],
     timeoutMs: number | null = 30_000,
   ): Promise<HostResponseEnvelope<M>> {
+    if (method === "workspace.setCurrent") {
+      const { ensureFileCanChangeWorkspace } = await import("../../features/dock/file-session");
+      if (!(await ensureFileCanChangeWorkspace((params as { cwd: string }).cwd)))
+        throw new Error("Workspace switch cancelled");
+    }
     if (!this.transport || this.detached) {
       throw new Error("Host transport not attached");
     }

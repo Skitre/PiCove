@@ -33,6 +33,8 @@ async function runCheck(): Promise<AppUpdate | null> {
   return {
     version: update.version,
     install: async (onProgress) => {
+      const { ensureFileCanLeave } = await import("../features/dock/file-session");
+      if (!(await ensureFileCanLeave())) throw new Error("Update cancelled");
       let downloadedBytes = 0;
       let totalBytes: number | null = null;
       await update.downloadAndInstall((event) => {
@@ -50,7 +52,14 @@ async function runCheck(): Promise<AppUpdate | null> {
         onProgress?.({ phase: "installing" });
       });
       const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
+      if (!(await ensureFileCanLeave())) throw new Error("Restart cancelled");
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("desktop_allow_exit", { approved: true });
+      try {
+        await relaunch();
+      } finally {
+        await invoke("desktop_allow_exit", { approved: false });
+      }
     },
   };
 }

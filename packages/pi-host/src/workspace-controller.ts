@@ -2,6 +2,12 @@ import { createHostError } from "@pideck/protocol";
 import type { MethodHandler } from "./server.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import { WorkspaceFileService } from "./workspace-files.js";
+import {
+  FileConflictError,
+  FileWorkspaceChangedError,
+  readWorkspaceFilePreview,
+  writeWorkspaceTextFile,
+} from "./workspace-file-content.js";
 import type { GitService } from "./git-service.js";
 
 export function createWorkspaceHandlers(
@@ -10,6 +16,56 @@ export function createWorkspaceHandlers(
   gitService?: GitService,
 ): Partial<Record<string, MethodHandler>> {
   return {
+    "workspace.readFilePreview": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const graph = factory.getGraph();
+      if (!graph) return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      try {
+        const result = await readWorkspaceFilePreview(
+          graph.canonicalCwd,
+          (ctx.params as { path: string }).path,
+        );
+        const changed = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+        return changed ? { error: changed } : { result };
+      } catch (error) {
+        return {
+          error: createHostError(
+            "FILE_READ_FAILED",
+            error instanceof Error ? error.message : "Unable to read file",
+          ),
+        };
+      }
+    },
+    "workspace.writeTextFile": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const graph = factory.getGraph();
+      if (!graph) return { error: createHostError("PROJECT_NOT_SELECTED", "No workspace") };
+      const params = ctx.params as { path: string; text: string; expectedVersion: string };
+      try {
+        return {
+          result: await writeWorkspaceTextFile(
+            graph.canonicalCwd,
+            params.path,
+            params.text,
+            params.expectedVersion,
+            () => !factory.checkIdentity(ctx.context, { requireWorkspace: true }),
+          ),
+        };
+      } catch (error) {
+        return {
+          error: createHostError(
+            error instanceof FileConflictError
+              ? "FILE_CONFLICT"
+              : error instanceof FileWorkspaceChangedError
+                ? "STALE_REVISION"
+                : "FILE_WRITE_FAILED",
+            error instanceof Error ? error.message : "Unable to save file",
+          ),
+        };
+      }
+    },
     "workspace.setCurrent": async (ctx) => {
       const params = ctx.params as { cwd: string };
       // First setCurrent uses expectedWorkspaceId=null, revision 0
@@ -22,14 +78,10 @@ export function createWorkspaceHandlers(
           ctx.context.expectedWorkspaceRevision !== 0
         ) {
           // still validate host
-          if (
-            ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId
-          ) {
+          if (ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId) {
             return { error: createHostError("STALE_REVISION", "Host instance mismatch") };
           }
-        } else if (
-          ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId
-        ) {
+        } else if (ctx.context.expectedHostInstanceId !== server.identity.hostInstanceId) {
           return { error: createHostError("STALE_REVISION", "Host instance mismatch") };
         }
       } else if (stale) {
@@ -193,10 +245,7 @@ function isIgnored(rules: IgnoreRule[], rel: string, isDir: boolean): boolean {
 
 /** LiveAgent-style ranking: filename prefix < path prefix < filename substring
  * < rest, then shallower first, dirs first, alphabetical. */
-export function searchSortKey(
-  entry: SearchEntry,
-  query: string,
-): [number, number, number, string] {
+export function searchSortKey(entry: SearchEntry, query: string): [number, number, number, string] {
   const path = entry.path.toLocaleLowerCase();
   const name = path.slice(path.lastIndexOf("/") + 1);
   const rank = !query

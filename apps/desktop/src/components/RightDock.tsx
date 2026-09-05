@@ -26,7 +26,8 @@ import {
   shellTerminalLabel,
   type ShellTerminalStatus,
 } from "../features/dock/ShellTerminal";
-import { FilesPanel } from "../features/dock/FilesPanel";
+import { WorkspaceFiles } from "../features/dock/WorkspaceFiles";
+import { clearFileSession, ensureFileCanLeave } from "../features/dock/file-session";
 import { BrowserPanel } from "../features/dock/BrowserPanel";
 import { TreePanel } from "../features/dock/TreePanel";
 import { ChangesPanel } from "../features/dock/ChangesPanel";
@@ -443,7 +444,16 @@ export function RightDock() {
 
   const closeTab = (tabId: DockTabId) => {
     if (tabId === "extensions") return;
-    if (tabId === "files" || tabId === "tree" || tabId === "changes") {
+    if (tabId === "files") {
+      void ensureFileCanLeave().then((allowed) => {
+        if (allowed) {
+          clearFileSession();
+          closeOrderTab(tabId);
+        }
+      });
+      return;
+    }
+    if (tabId === "tree" || tabId === "changes") {
       closeOrderTab(tabId);
       return;
     }
@@ -801,7 +811,7 @@ export function RightDock() {
             aria-labelledby="dock-tab-files"
             className={`min-h-0 flex-1 ${activeTab === "files" ? "flex" : "hidden"}`}
           >
-            <FilesPanel visible={activeTab === "files" && dockOpen} />
+            <WorkspaceFiles visible={activeTab === "files" && dockOpen} />
           </div>
         )}
         {tabOrder.includes("tree") && (
