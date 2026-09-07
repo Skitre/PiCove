@@ -30,6 +30,7 @@ export function Dialog({
   icon: Icon = PackageOpen,
   showCancel = true,
   confirmDisabled = false,
+  className = "",
   onCancel,
   onConfirm,
 }: {
@@ -40,6 +41,7 @@ export function Dialog({
   icon?: LucideIcon;
   showCancel?: boolean;
   confirmDisabled?: boolean;
+  className?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -95,7 +97,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-dialog-title"
-        className="theme-floating-surface max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl"
+        className={`theme-floating-surface max-h-[min(680px,90vh)] w-full max-w-lg overflow-auto rounded-xl border border-border bg-surface-raised p-5 shadow-2xl ${className}`}
       >
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 rounded-md p-1.5 ${ICON_CHIP[tone]}`}>

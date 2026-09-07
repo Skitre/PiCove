@@ -9,6 +9,7 @@ import { requestDockCommand } from "../../lib/commands/events";
 import { formatCommandChord } from "../../lib/commands/keymap";
 import { appCommands } from "../../lib/commands/registry";
 import { resolveCommandChord } from "../../lib/commands/shortcut-bindings";
+import { ExtensionUiQuickSettings } from "../extensions/ExtensionUiQuickSettings";
 
 const DOCK_TOGGLE_COMMAND = appCommands.find((command) => command.id === "dock.toggle")!;
 
@@ -61,18 +62,23 @@ export function ChatHeader() {
           </span>
         </div>
       </div>
-      <button
-        type="button"
-        title={dockToggleShortcut ? `${dockToggleLabel} (${dockToggleShortcut})` : dockToggleLabel}
-        aria-label={dockOpen ? t("dockCollapseRightPanel") : t("dockOpenRightPanel")}
-        aria-expanded={dockOpen}
-        aria-controls="right-dock"
-        data-dock-toolbar-toggle
-        className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
-        onClick={() => requestDockCommand({ kind: "toggle" })}
-      >
-        {dockOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-      </button>
+      <div className="flex shrink-0 items-center gap-1">
+        <ExtensionUiQuickSettings />
+        <button
+          type="button"
+          title={
+            dockToggleShortcut ? `${dockToggleLabel} (${dockToggleShortcut})` : dockToggleLabel
+          }
+          aria-label={dockOpen ? t("dockCollapseRightPanel") : t("dockOpenRightPanel")}
+          aria-expanded={dockOpen}
+          aria-controls="right-dock"
+          data-dock-toolbar-toggle
+          className="flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-surface-overlay hover:text-foreground"
+          onClick={() => requestDockCommand({ kind: "toggle" })}
+        >
+          {dockOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+        </button>
+      </div>
     </div>
   );
 }

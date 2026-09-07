@@ -208,6 +208,7 @@ function FontPicker({
     <Dialog
       title={t(labels[field])}
       icon={Type}
+      className="pr-[calc(18px+2.75rem)]"
       confirmLabel={t(saving ? "fontSaving" : "fontUse")}
       confirmDisabled={loading || saving || !!error}
       onCancel={() => {
