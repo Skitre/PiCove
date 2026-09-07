@@ -79,6 +79,8 @@ import {
   readTranscriptScrollPosition,
   saveTranscriptScrollPosition,
 } from "./transcript-scroll-memory";
+import { buildTranscriptTurns } from "./transcript-minimap-model";
+import { TranscriptMinimap } from "./TranscriptMinimap";
 
 const MarkdownMessage = lazy(() =>
   import("./MarkdownMessage").then((module) => ({ default: module.MarkdownMessage })),
@@ -130,6 +132,7 @@ function initialHiddenFor(sessionId: string | null, rowCount: number): number {
 
 export function Transcript() {
   const t = useT();
+  const page = useAppStore((state) => state.page);
   const session = useAppStore((state) => state.session);
   const messages = useMemo(() => session?.messages ?? [], [session?.messages]);
   const prevRowsRef = useRef<TranscriptRow[] | null>(null);
@@ -146,6 +149,13 @@ export function Transcript() {
     [messages, session?.entries, session?.leafId, session?.extensionMessageRenders],
   );
   prevRowsRef.current = rows;
+  const turns = useMemo(() => buildTranscriptTurns(rows), [rows]);
+  const turnElements = useRef(new Map<string, HTMLDivElement>());
+  const navigationRef = useRef<string | null>(null);
+  const [navigationKey, setNavigationKey] = useState<string | null>(null);
+  const navigationFrame = useRef<number | null>(null);
+  const navigationScope = useRef<{ sessionId?: string; cwd?: string; leafId?: string | null }>({});
+  const [branchVersion, setBranchVersion] = useState(0);
   const promptEntryIds = useMemo(() => userPromptEntryIds(rows), [rows]);
   const userRowsByEntryId = useMemo(() => {
     const map = new Map<string, TranscriptRow>();
@@ -213,6 +223,86 @@ export function Transcript() {
     updateFollowing(false);
     refreshReadingAnchor();
   }, [cancelScheduledScroll, refreshReadingAnchor, updateFollowing]);
+
+  const cancelNavigation = useCallback(() => {
+    navigationRef.current = null;
+    setNavigationKey(null);
+    if (navigationFrame.current !== null) cancelAnimationFrame(navigationFrame.current);
+    navigationFrame.current = null;
+  }, []);
+
+  const alignNavigation = useCallback(() => {
+    const key = navigationRef.current;
+    const target = key ? turnElements.current.get(key) : null;
+    const scroll = scrollRef.current;
+    if (!target || !scroll) return;
+    scroll.scrollTop +=
+      target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12;
+    programmaticScrollTopRef.current = scroll.scrollTop;
+    scrollMetricsRef.current = { top: scroll.scrollTop, height: scroll.scrollHeight };
+    refreshReadingAnchor();
+  }, [refreshReadingAnchor]);
+
+  const scheduleNavigationAlignment = useCallback(() => {
+    if (navigationFrame.current !== null) return;
+    navigationFrame.current = requestAnimationFrame(() => {
+      navigationFrame.current = null;
+      alignNavigation();
+    });
+  }, [alignNavigation]);
+
+  function navigateToTurn(key: string) {
+    cancelNavigation();
+    stopFollowing();
+    navigationRef.current = key;
+    setNavigationKey(key);
+    scheduleNavigationAlignment();
+  }
+
+  useLayoutEffect(() => {
+    const previous = navigationScope.current;
+    const sameSession = previous.sessionId === session?.sessionId && previous.cwd === session?.cwd;
+    const continues =
+      previous.leafId === session?.leafId ||
+      (previous.leafId && session?.entries?.some((entry) => entry.id === previous.leafId));
+    if (!sameSession || !continues || page !== "chat") {
+      cancelNavigation();
+      if (sameSession && !continues) {
+        setBranchVersion((version) => version + 1);
+        setHiddenState({
+          sessionId: session?.sessionId ?? null,
+          hidden: Math.max(0, rows.length - INITIAL_VISIBLE_ROWS),
+        });
+        expandAnchorRef.current = null;
+        updateFollowing(true);
+        scheduleBottomAlignment();
+      }
+    }
+    navigationScope.current = {
+      sessionId: session?.sessionId,
+      cwd: session?.cwd,
+      leafId: session?.leafId,
+    };
+  }, [
+    session?.sessionId,
+    session?.cwd,
+    session?.leafId,
+    session?.entries,
+    rows.length,
+    page,
+    cancelNavigation,
+    updateFollowing,
+    scheduleBottomAlignment,
+  ]);
+
+  useEffect(
+    () => () => {
+      navigationRef.current = null;
+      if (navigationFrame.current !== null) cancelAnimationFrame(navigationFrame.current);
+      navigationFrame.current = null;
+    },
+    [],
+  );
 
   // Top-anchored window: `hidden` rows stay unmounted above the fold. New
   // rows stream in at the tail without disturbing what is on screen.
@@ -311,6 +401,7 @@ export function Transcript() {
     };
   }, []);
   useEffect(() => {
+    if (navigationKey !== null) return;
     if (hidden <= mountFloor) return;
     if (isStreaming && following) return;
     if (following && windowFocused) return;
@@ -330,7 +421,41 @@ export function Transcript() {
       cancelled = true;
       cancel?.();
     };
-  }, [hidden, mountFloor, isStreaming, following, windowFocused, mountEarlier]);
+  }, [hidden, mountFloor, isStreaming, following, windowFocused, mountEarlier, navigationKey]);
+
+  const navigationIndex =
+    navigationKey === null ? -1 : rows.findIndex((row) => row.key === navigationKey);
+  const locating = navigationIndex >= 0 && navigationIndex < hidden;
+  useEffect(() => {
+    if (!navigationKey) return;
+    if (navigationIndex < 0) {
+      cancelNavigation();
+      return;
+    }
+    if (!locating) {
+      scheduleNavigationAlignment();
+      return;
+    }
+    return scheduleIdleMount(() => {
+      if (navigationRef.current !== navigationKey) return;
+      batchStartRef.current = performance.now();
+      // Explicit jumps use bounded page-sized batches; tiny idle batches repeatedly
+      // reconcile the entire mounted history and make distant navigation too slow.
+      const count = Math.min(
+        SHOW_EARLIER_CHUNK,
+        Math.max(INITIAL_VISIBLE_ROWS, batchSizerRef.current.size()),
+      );
+      mountEarlier(count, navigationIndex);
+    });
+  }, [
+    navigationKey,
+    navigationIndex,
+    locating,
+    hidden,
+    mountEarlier,
+    cancelNavigation,
+    scheduleNavigationAlignment,
+  ]);
 
   useLayoutEffect(() => {
     // Keep the viewport anchored on the previously-visible content after
@@ -408,30 +533,44 @@ export function Transcript() {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (followingRef.current) scheduleBottomAlignment();
+      if (navigationRef.current) scheduleNavigationAlignment();
+      else if (followingRef.current) scheduleBottomAlignment();
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [scheduleBottomAlignment]);
+  }, [scheduleBottomAlignment, scheduleNavigationAlignment]);
 
   useEffect(() => cancelScheduledScroll, [cancelScheduledScroll]);
 
   function scrollToBottom() {
     const element = scrollRef.current;
     if (!element) return;
+    cancelNavigation();
     updateFollowing(true);
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div
+      className="relative min-h-0 flex-1"
+      data-transcript-has-minimap={turns.length >= 2 ? "true" : undefined}
+    >
       <div
         ref={scrollRef}
         data-transcript-scroll
         className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
         onWheel={(event) => {
+          cancelNavigation();
           lastUserScrollAtRef.current = performance.now();
           if (event.deltaY < 0) stopFollowing();
+        }}
+        onPointerDown={cancelNavigation}
+        onTouchStart={cancelNavigation}
+        onKeyDown={(event) => {
+          if (
+            ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)
+          )
+            cancelNavigation();
         }}
         onScroll={(event) => {
           const element = event.currentTarget;
@@ -441,7 +580,14 @@ export function Transcript() {
           // quantization error and drift.
           const programmaticTop = programmaticScrollTopRef.current;
           programmaticScrollTopRef.current = null;
+          if (
+            navigationRef.current &&
+            programmaticTop !== null &&
+            Math.abs(element.scrollTop - programmaticTop) < 1
+          )
+            return;
           if (programmaticTop === null || Math.abs(element.scrollTop - programmaticTop) >= 1) {
+            if (navigationRef.current) cancelNavigation();
             lastUserScrollAtRef.current = performance.now();
             refreshReadingAnchor();
           }
@@ -496,6 +642,14 @@ export function Transcript() {
               <div
                 className="transcript-row"
                 data-row-key={row.key}
+                ref={
+                  row.role === "user"
+                    ? (element) => {
+                        if (element) turnElements.current.set(row.key, element);
+                        else turnElements.current.delete(row.key);
+                      }
+                    : undefined
+                }
                 key={`${session?.sessionId ?? "session"}:${row.key}`}
                 onContextMenu={(event) => {
                   if (shouldKeepNativeContextMenu(event.nativeEvent)) return;
@@ -651,6 +805,19 @@ export function Transcript() {
           <div ref={tailAnchorRef} className="h-1" aria-hidden="true" />
         </div>
       </div>
+      {page === "chat" && turns.length >= 2 && (
+        <TranscriptMinimap
+          key={`${sessionKey}:${branchVersion}`}
+          turns={turns}
+          scrollRef={scrollRef}
+          contentRef={contentRef}
+          rowElements={turnElements}
+          hidden={hidden}
+          working={session?.isIdle === false}
+          pendingKey={locating ? navigationKey : null}
+          onNavigate={navigateToTurn}
+        />
+      )}
       {!following && (
         <button
           type="button"

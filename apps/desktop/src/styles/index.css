@@ -1404,6 +1404,19 @@ textarea:focus-visible {
   overflow-anchor: none;
 }
 
+[data-transcript-has-minimap="true"] > [data-transcript-scroll] {
+  padding-left: 48px;
+  padding-right: 48px;
+}
+
+.transcript-minimap-rail {
+  scrollbar-width: none;
+}
+
+.transcript-minimap-rail::-webkit-scrollbar {
+  display: none;
+}
+
 /* Keep the long-running trace indicator on WebKit's compositor while the
    transcript is receiving frequent streaming updates. */
 .execution-trace-spinner {

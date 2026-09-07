@@ -14,6 +14,7 @@ import { useAppStore } from "../../lib/stores/app-store";
 import { Transcript } from "./Transcript";
 import { MenuHost } from "../../components/Menu";
 import { PROGRESSIVE_BATCH_ROWS } from "./progressive-mount";
+import * as progressiveMount from "./progressive-mount";
 import { clearTranscriptScrollPositions } from "./transcript-scroll-memory";
 import { buildAttachedFileBlock } from "./transcript-model";
 
@@ -153,6 +154,7 @@ describe("Transcript Session-open scrolling", () => {
       }),
     );
     useAppStore.setState({
+      page: "chat",
       session: session(SESSION_A, "First Session"),
       desktopSettings: {
         theme: "system",
@@ -170,9 +172,142 @@ describe("Transcript Session-open scrolling", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     delete (navigator as { clipboard?: Clipboard }).clipboard;
     useAppStore.setState({ session: null, desktopSettings: null });
+  });
+
+  function mockNavigationLayout(container: HTMLElement) {
+    const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+    let top = 0;
+    const mounted = () => [...container.querySelectorAll<HTMLElement>(".transcript-row")];
+    Object.defineProperties(scroll, {
+      scrollTop: {
+        configurable: true,
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(value, mounted().length * 40 - 100));
+        },
+      },
+      scrollHeight: { configurable: true, get: () => mounted().length * 40 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const index = mounted().indexOf(this);
+      return {
+        top: index < 0 ? 0 : index * 40 - top,
+        height: 40,
+        left: 0,
+        right: 36,
+        width: 36,
+        bottom: 40,
+      } as DOMRect;
+    });
+    return scroll;
+  }
+
+  it("navigates to early history in batches beyond the automatic cap while retaining the tail and session", async () => {
+    vi.spyOn(progressiveMount, "autoMountFloor").mockImplementation((count) =>
+      Math.max(0, count - 80),
+    );
+    const request = vi.spyOn(hostClient, "request");
+    const original = longSession(SESSION_A, 200);
+    useAppStore.setState({ session: original });
+    const { container } = render(<Transcript />);
+    const scroll = mockNavigationLayout(container);
+    flushFrames();
+    const rail = screen.getByRole("listbox", { name: "Conversation minimap" });
+    fireEvent.keyDown(rail, { key: "Home" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    expect(screen.getByRole("status")).toHaveTextContent("Locating message");
+    expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+    flushIdleToConvergence(80);
+    flushFrames();
+    expect(container.querySelectorAll(".transcript-row")).toHaveLength(200);
+    expect(screen.queryByText("Locating message...")).not.toBeInTheDocument();
+    expect(scroll.scrollTop).toBe(0);
+    expect(container.querySelector("[data-transcript-content]")).toHaveTextContent("Message 200");
+    expect(useAppStore.getState().session).toEqual(original);
+    expect(request).not.toHaveBeenCalled();
+    act(() => TestResizeObserver.instances.at(-1)?.trigger());
+    flushFrames();
+    expect(scroll.scrollTop).toBe(0);
+  });
+
+  it("replaces pending navigation and cancels it when the reader scrolls or changes sessions", () => {
+    useAppStore.setState({ session: longSession(SESSION_A, 200) });
+    const { container } = render(<Transcript />);
+    const scroll = mockNavigationLayout(container);
+    flushFrames();
+    const rail = screen.getByRole("listbox", { name: "Conversation minimap" });
+    fireEvent.keyDown(rail, { key: "Home" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    fireEvent.keyDown(rail, { key: "End" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    flushIdle();
+    flushFrames();
+    expect(container.querySelectorAll(".transcript-row")).toHaveLength(60);
+    expect(screen.queryByText("Locating message...")).not.toBeInTheDocument();
+    fireEvent.keyDown(rail, { key: "Home" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    fireEvent.wheel(scroll, { deltaY: -10 });
+    expect(screen.queryByText("Locating message...")).not.toBeInTheDocument();
+    fireEvent.keyDown(rail, { key: "Enter" });
+    act(() => useAppStore.setState({ session: session(SESSION_B, "Different session") }));
+    flushIdle();
+    flushFrames();
+    expect(screen.queryByRole("listbox", { name: "Conversation minimap" })).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".transcript-row")).toHaveLength(1);
+    expect(screen.getByText("Different session")).toBeInTheDocument();
+  });
+
+  it("keeps navigation during branch extension and cancels it on an actual branch change", () => {
+    const original = longSession(SESSION_A, 200);
+    const entries = original.messages.map((message, index) => ({
+      id: "entry" + index,
+      parentId: index ? "entry" + (index - 1) : null,
+      type: "message",
+      message: { role: "user", content: "Message " + (index + 1) },
+    }));
+    useAppStore.setState({ session: { ...original, entries, leafId: "entry199" } });
+    const { container } = render(<Transcript />);
+    mockNavigationLayout(container);
+    flushFrames();
+    const rail = screen.getByRole("listbox", { name: "Conversation minimap" });
+    fireEvent.keyDown(rail, { key: "Home" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    const appended = [
+      ...entries,
+      {
+        id: "entry200",
+        parentId: "entry199",
+        type: "message",
+        message: { role: "user", content: "New prompt" },
+      },
+    ];
+    act(() =>
+      useAppStore.setState({ session: { ...original, entries: appended, leafId: "entry200" } }),
+    );
+    expect(rail).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Locating message");
+    act(() =>
+      useAppStore.setState({
+        session: {
+          ...original,
+          messages: original.messages.slice(0, 5),
+          entries: entries.slice(0, 5),
+          leafId: "entry4",
+        },
+      }),
+    );
+    flushIdle();
+    flushFrames();
+    expect(rail).not.toBeInTheDocument();
+    expect(screen.queryByText("Locating message...")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".transcript-row")).toHaveLength(5);
   });
 
   it("keeps a newly opened Session at the bottom through late content growth", () => {
