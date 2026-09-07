@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { fontLibraryRevision, subscribeFontLibrary } from "../../lib/fonts";
 import {
   isPresentationHomeForFamily,
   type DetachedFloatPlacement,
@@ -113,6 +114,7 @@ export function ExtensionFloatWindowController() {
   const coordinateSpace = resolveWindowControlsPlatform() === "windows" ? "physical" : "logical";
   const slots = useLiveExtensionPresentationSlots();
   const desktopSettings = useAppStore((state) => state.desktopSettings);
+  const fontsRevision = useSyncExternalStore(subscribeFontLibrary, fontLibraryRevision);
   const collapsedWidgetKeys = useAppStore((state) => state.collapsedExtensionWidgetKeys);
 
   /** slotId → window label, for windows this controller opened. */
@@ -317,6 +319,12 @@ export function ExtensionFloatWindowController() {
         language: desktopSettings?.language,
         theme: resolveEffectiveTheme(desktopSettings?.theme ?? "system"),
         themeFamily: desktopSettings?.themeFamily ?? "pideck",
+        fontPreferences: {
+          uiFont: desktopSettings?.uiFont,
+          textFont: desktopSettings?.textFont,
+          codeFont: desktopSettings?.codeFont,
+        },
+        fontLibraryRevision: fontsRevision,
         reducedMotion,
         pinned: mount.home.pinned === true,
       };

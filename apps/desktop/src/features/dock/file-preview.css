@@ -71,11 +71,11 @@
   display: none;
 }
 .file-live-editor .cm-editor {
-  font-family: var(--font-sans);
+  font-family: var(--font-text);
   font-size: 14px;
 }
 .file-live-editor .cm-scroller {
-  font-family: var(--font-sans);
+  font-family: var(--font-text);
   line-height: 1.75;
 }
 .file-live-editor .cm-content {

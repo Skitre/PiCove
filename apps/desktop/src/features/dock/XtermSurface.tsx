@@ -8,6 +8,7 @@ import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { useT } from "../../lib/i18n/use-t";
 import { formatCommandChord } from "../../lib/commands/keymap";
 import { readClipboardText } from "../../lib/desktop-clipboard";
+import { FONT_CHANGED_EVENT } from "../../lib/fonts";
 
 type Cleanup = () => void | Promise<void>;
 type FontLoader = {
@@ -96,6 +97,24 @@ export function XtermSurface({
     let observer: ResizeObserver | undefined;
     let themeObserver: MutationObserver | undefined;
     let terminal: Terminal | undefined;
+    let fontUpdate = 0;
+    let currentFamily = "";
+    const updateFont = (force = false) => {
+      const family = cssVar("--font-mono", "monospace");
+      const update = ++fontUpdate;
+      if (!terminal || (!force && family === currentFamily)) return;
+      void waitForTerminalFont(document.fonts, family, TERMINAL_FONT_SIZE).then(() => {
+        if (cancelled || update !== fontUpdate || !terminal) return;
+        // xterm measures on option changes, including a font reloaded under the same family.
+        if (force && family === currentFamily) terminal.options.fontFamily = "monospace";
+        currentFamily = family;
+        terminal.options.fontFamily = family;
+        fitRef.current?.();
+        terminal.refresh?.(0, terminal.rows - 1);
+      });
+    };
+    const fontReady = () => updateFont(true);
+    window.addEventListener(FONT_CHANGED_EVENT, fontReady);
 
     void Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]).then(
       async ([{ Terminal }, { FitAddon }]) => {
@@ -118,6 +137,7 @@ export function XtermSurface({
           scrollback: 10_000,
           theme: xtermTheme(),
         });
+        currentFamily = fontFamily;
         const fit = new FitAddon();
         terminal.loadAddon(fit);
         terminal.attachCustomKeyEventHandler(
@@ -145,7 +165,9 @@ export function XtermSurface({
         // the effective color mode and theme family so open terminals recolor live.
         themeObserver = new MutationObserver(() => {
           if (terminal) terminal.options.theme = xtermTheme();
+          updateFont();
         });
+        updateFont();
         themeObserver.observe(document.documentElement, {
           attributes: true,
           attributeFilter: ["class", "data-theme-family"],
@@ -169,6 +191,7 @@ export function XtermSurface({
 
     return () => {
       cancelled = true;
+      window.removeEventListener(FONT_CHANGED_EVENT, fontReady);
       observer?.disconnect();
       themeObserver?.disconnect();
       fitRef.current = null;

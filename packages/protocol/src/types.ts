@@ -1049,6 +1049,37 @@ export const TERMINAL_PROFILE_IDS = [
 ] as const;
 export type TerminalProfileId = (typeof TERMINAL_PROFILE_IDS)[number];
 
+export type DesktopFontReference =
+  { source: "default" } | { source: "system"; family: string } | { source: "imported"; id: string };
+
+export type DesktopFontFace = {
+  id: string;
+  weight: string;
+  style: string;
+  stretch: string;
+};
+
+export type DesktopFontFamily = {
+  id: string;
+  family: string;
+  source: "system" | "imported";
+  monospace: boolean;
+  faces: DesktopFontFace[];
+};
+
+export type DesktopFontCatalog = {
+  families: DesktopFontFamily[];
+  systemError?: string;
+};
+
+export type DesktopFontImportResult = {
+  items: Array<{
+    name: string;
+    status: "imported" | "skipped" | "failed";
+    detail: string;
+  }>;
+};
+
 export type DesktopSettings = {
   theme: DesktopTheme;
   /** Visual theme family; absent values use the original PiDeck palette. */
@@ -1075,6 +1106,9 @@ export type DesktopSettings = {
   conversationFontSize?: number;
   /** Font size for inline and fenced conversation code, in CSS pixels. */
   codeFontSize?: number;
+  uiFont?: DesktopFontReference;
+  textFont?: DesktopFontReference;
+  codeFont?: DesktopFontReference;
   /** Persistent list of workspace folders shown in the sidebar. */
   knownWorkspaces?: string[];
   /** Per-command shortcut overrides. null explicitly disables a command binding. */

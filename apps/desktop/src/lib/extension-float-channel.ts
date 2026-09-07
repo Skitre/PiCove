@@ -1,4 +1,5 @@
 import type { AppLanguage } from "./i18n";
+import type { FontPreferences } from "./fonts";
 import type { LiveStatusContent, LiveWidgetContent } from "./extension-ui-slots";
 import type { ExtensionPresentationSlot, PresentationSlotMount } from "./extension-ui-slots";
 import { parseStructuredWidget, type ScreenRect } from "@pideck/protocol";
@@ -43,6 +44,8 @@ export type FloatChrome = {
   language: AppLanguage | undefined;
   theme: "light" | "dark";
   themeFamily: string;
+  fontPreferences?: FontPreferences;
+  fontLibraryRevision?: number;
   reducedMotion: boolean;
   pinned: boolean;
 };

@@ -4,6 +4,7 @@ mod desktop_settings;
 mod draft_store;
 mod extension_float;
 mod extension_ui_settings;
+mod fonts;
 mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
@@ -20,6 +21,7 @@ use tauri::{Emitter, Listener, Manager};
 use tokio::sync::Mutex;
 
 pub struct AppState {
+    pub fonts: std::sync::Arc<std::sync::Mutex<fonts::FontStore>>,
     pub exit_approved: AtomicBool,
     pub settings: Mutex<DesktopSettingsStore>,
     pub drafts: Mutex<DraftStore>,
@@ -47,6 +49,9 @@ pub fn run() {
             let host = PiHostManager::new(app.handle().clone(), &settings);
             app.manage(AppState {
                 exit_approved: AtomicBool::new(false),
+                fonts: std::sync::Arc::new(std::sync::Mutex::new(fonts::FontStore::new(
+                    settings.fonts_dir(),
+                ))),
                 settings: Mutex::new(settings),
                 drafts: Mutex::new(drafts),
                 host: Mutex::new(host),
@@ -145,6 +150,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            fonts::desktop_fonts_list,
+            fonts::desktop_fonts_import,
+            fonts::desktop_font_read,
+            fonts::desktop_font_remove,
             commands::desktop_settings_get,
             commands::desktop_settings_patch,
             commands::desktop_drafts_get,

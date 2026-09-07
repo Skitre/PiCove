@@ -29,6 +29,7 @@ export function Dialog({
   tone = "default",
   icon: Icon = PackageOpen,
   showCancel = true,
+  confirmDisabled = false,
   onCancel,
   onConfirm,
 }: {
@@ -38,6 +39,7 @@ export function Dialog({
   tone?: DialogTone;
   icon?: LucideIcon;
   showCancel?: boolean;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -112,7 +114,12 @@ export function Dialog({
               {t("commonCancel")}
             </button>
           )}
-          <button type="button" className={CONFIRM_BUTTON[tone]} onClick={onConfirm}>
+          <button
+            type="button"
+            className={CONFIRM_BUTTON[tone]}
+            disabled={confirmDisabled}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </button>
         </div>

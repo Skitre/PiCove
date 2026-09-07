@@ -30,6 +30,7 @@ Chat with your coding agent, watch its tools work, manage sessions, models, and 
 - **Packages** — browse the pi.dev catalog, then install and manage user-scope Extensions, Skills, Prompts, and Themes.
 - **Extension UI & terminal** — extensions render their own interactive panels, and an integrated workspace terminal is one shortcut away.
 - **Make it yours** — PiCove, Vercel, and Apple themes; customizable keyboard shortcuts and context menus; English and 简体中文.
+- **Font settings** — choose installed system fonts independently for interface, text, and code in Settings → Appearance. Import TTF, OTF, TTC, or ZIP files into an app-private library; terminals follow the code font. Search, preview, reset, and delete imported families without restarting.
 
 ![Interactive extension prompt and the Git changes panel](docs/assets/readme/features-1.png)
 

@@ -53,6 +53,24 @@ describe("recentDesktopLocationPatch", () => {
 });
 
 describe("persistDesktopSettings", () => {
+  it("persists independent font references and rejects invalid references before invoking native", async () => {
+    mocks.isTauri.mockReturnValue(false);
+    await persistDesktopSettings({
+      uiFont: { source: "system", family: "User Installed Font" },
+      textFont: { source: "default" },
+      codeFont: { source: "imported", id: "a".repeat(64) },
+    });
+    expect(useAppStore.getState().desktopSettings?.codeFont).toEqual({
+      source: "imported",
+      id: "a".repeat(64),
+    });
+    await expect(
+      persistDesktopSettings({
+        codeFont: { source: "imported", id: "../font" },
+      }),
+    ).rejects.toThrow("Invalid codeFont");
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
   it("keeps a Tauri write failure observable without applying an optimistic patch", async () => {
     mocks.isTauri.mockReturnValue(true);
     mocks.invoke.mockRejectedValue(new Error("disk full"));

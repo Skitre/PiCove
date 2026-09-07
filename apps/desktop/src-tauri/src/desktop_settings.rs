@@ -1,4 +1,5 @@
 use crate::extension_ui_settings::{deserialize_extension_ui_settings, ExtensionUiSettings};
+use crate::fonts::FontReference;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -119,6 +120,12 @@ pub struct DesktopSettings {
     pub conversation_content_width: u32,
     pub conversation_font_size: u32,
     pub code_font_size: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_font: Option<FontReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_font: Option<FontReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_font: Option<FontReference>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub known_workspaces: Vec<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -147,6 +154,9 @@ impl Default for DesktopSettings {
             conversation_content_width: DEFAULT_CONVERSATION_CONTENT_WIDTH,
             conversation_font_size: DEFAULT_CONVERSATION_FONT_SIZE,
             code_font_size: DEFAULT_CODE_FONT_SIZE,
+            ui_font: None,
+            text_font: None,
+            code_font: None,
             known_workspaces: Vec::new(),
             shortcut_overrides: BTreeMap::new(),
             extension_ui: ExtensionUiSettings::default(),
@@ -275,6 +285,12 @@ impl DesktopSettingsStore {
     }
 
     fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
+        for font in [&settings.ui_font, &settings.text_font, &settings.code_font]
+            .into_iter()
+            .flatten()
+        {
+            font.validate()?;
+        }
         if settings.conversation_content_width < MIN_CONVERSATION_CONTENT_WIDTH {
             return Err(format!(
                 "conversationContentWidth must be at least {MIN_CONVERSATION_CONTENT_WIDTH}"
@@ -416,6 +432,9 @@ impl DesktopSettingsStore {
                     | "conversationContentWidth"
                     | "conversationFontSize"
                     | "codeFontSize"
+                    | "uiFont"
+                    | "textFont"
+                    | "codeFont"
                     | "knownWorkspaces"
                     | "shortcutOverrides"
                     | "extensionUi"
@@ -450,6 +469,13 @@ impl DesktopSettingsStore {
             .join(".pi")
             .join("agent")
     }
+
+    pub fn fonts_dir(&self) -> PathBuf {
+        self.path
+            .parent()
+            .expect("settings have a parent directory")
+            .join("fonts")
+    }
 }
 
 fn create_private_directory(path: &Path) -> Result<(), String> {
@@ -465,7 +491,7 @@ fn create_private_directory(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
@@ -492,7 +518,7 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     fs::rename(source, destination).map_err(|e| e.to_string())
 }
 
@@ -1012,6 +1038,29 @@ mod tests {
             .unwrap_err()
             .contains("must be an object"));
         assert_eq!(serde_json::to_value(&invalid.settings).unwrap(), before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn font_preferences_round_trip_and_old_settings_keep_defaults() {
+        let dir = test_dir("fonts");
+        let mut store = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert!(store.settings.ui_font.is_none());
+        store
+            .patch(serde_json::json!({
+                "uiFont": { "source": "system", "family": "Installed Font" },
+                "textFont": { "source": "default" },
+                "codeFont": { "source": "imported", "id": "a".repeat(64) }
+            }))
+            .unwrap();
+        let reloaded = DesktopSettingsStore::load_from_dir(&dir).unwrap();
+        assert_eq!(reloaded.settings.ui_font, store.settings.ui_font);
+        assert_eq!(reloaded.settings.text_font, store.settings.text_font);
+        assert_eq!(reloaded.settings.code_font, store.settings.code_font);
+        assert_eq!(reloaded.fonts_dir(), dir.join("fonts"));
+        assert!(store
+            .patch(serde_json::json!({"uiFont": {"source":"system","family":""}}))
+            .is_err());
+        assert_eq!(reloaded.settings.ui_font, store.settings.ui_font);
         fs::remove_dir_all(dir).unwrap();
     }
 }

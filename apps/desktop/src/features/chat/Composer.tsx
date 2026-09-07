@@ -439,7 +439,7 @@ export function Composer({
         if (!isDesktop || cancelled) return;
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");
         unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-          if (cancelled || disabled) return;
+          if (cancelled || disabled || useAppStore.getState().page !== "chat") return;
           if (event.payload.type === "enter" || event.payload.type === "over") {
             setDragOver(true);
           } else if (event.payload.type === "leave") {

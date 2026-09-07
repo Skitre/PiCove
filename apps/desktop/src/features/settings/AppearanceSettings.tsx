@@ -7,6 +7,7 @@ import type {
   DesktopThemeFamily,
 } from "@pideck/protocol";
 import { Minus, Plus } from "lucide-react";
+import { FontSettings } from "./FontSettings";
 import { SectionHeader } from "../../components/SectionHeader";
 import {
   applyAppearancePreferences,
@@ -308,6 +309,8 @@ export function AppearanceSettings() {
               </div>
             </div>
           </section>
+
+          <FontSettings />
 
           <section>
             <h2 className="mb-2 text-sm font-medium text-muted">

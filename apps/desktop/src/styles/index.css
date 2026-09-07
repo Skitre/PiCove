@@ -71,13 +71,16 @@
   --color-danger: #ef4444;
   --color-background: var(--color-surface);
   --color-muted-foreground: var(--color-muted);
-  --font-sans:
-    "Inter Variable", "PiDeck PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:
-    "JetBrains Mono Variable", "PiDeck PingFang SC", ui-monospace, "Cascadia Code", monospace;
+  --font-sans: var(--font-default-sans);
+  --font-mono: var(--font-default-mono);
 }
 
 :root {
+  --font-default-sans:
+    "Inter Variable", "PiDeck PingFang SC", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-default-mono:
+    "JetBrains Mono Variable", "PiDeck PingFang SC", ui-monospace, "Cascadia Code", monospace;
+  --font-text: var(--font-default-sans);
   --interface-control-height: 2rem;
   --interface-nav-row-height: 2.25rem;
   --interface-primary-row-height: 2.5rem;
@@ -468,7 +471,7 @@ html.light {
 }
 
 html[data-theme-family="apple"] {
-  --font-sans:
+  --font-default-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "PiDeck PingFang SC", "Inter Variable",
     system-ui, "Segoe UI", sans-serif;
   --radius-sm: 6px;
@@ -1943,4 +1946,13 @@ svg[data-pideck-mermaid-theme="neutral"] {
   .collapsible-region__content {
     transform: none;
   }
+}
+
+/* User typography is scoped to PiDeck content; embedded documents keep their own fonts. */
+.chat-markdown,
+.theme-user-message,
+.chat-composer-input,
+.conversation-plain-text,
+.appearance-preview-copy {
+  font-family: var(--font-text);
 }

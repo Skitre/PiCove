@@ -86,7 +86,9 @@ const MarkdownMessage = lazy(() =>
 
 function MarkdownFallback({ content, className = "" }: { content: string; className?: string }) {
   return (
-    <div className={`whitespace-pre-wrap break-words text-sm leading-6 ${className}`}>
+    <div
+      className={`conversation-plain-text whitespace-pre-wrap break-words text-sm leading-6 ${className}`}
+    >
       {sanitizeAgentText(content)}
     </div>
   );

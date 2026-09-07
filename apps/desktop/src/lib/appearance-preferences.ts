@@ -4,6 +4,8 @@ import {
   type DesktopSettings,
 } from "@pideck/protocol";
 
+import { applyFontPreferences } from "./fonts";
+
 const DEFAULT_INTERFACE_DENSITY: DesktopInterfaceDensity = "standard";
 const DEFAULT_CONVERSATION_FONT_SIZE = 14;
 export const MIN_CONVERSATION_FONT_SIZE = 12;
@@ -39,6 +41,7 @@ export function resolveCodeFontSize(value: unknown): number {
 
 export function applyAppearancePreferences(settings: DesktopSettings | null | undefined): void {
   if (typeof document === "undefined") return;
+  applyFontPreferences(settings);
   const root = document.documentElement;
   root.dataset.interfaceDensity = resolveInterfaceDensity(settings?.interfaceDensity);
   root.style.setProperty(

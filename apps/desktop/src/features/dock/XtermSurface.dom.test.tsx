@@ -48,6 +48,7 @@ vi.mock("./terminal-clipboard", () => ({
 }));
 
 import { XtermSurface } from "./XtermSurface";
+import { FONT_CHANGED_EVENT } from "../../lib/fonts";
 
 class ResizeObserverStub {
   observe() {}
@@ -107,6 +108,27 @@ afterEach(() => {
 });
 
 describe("XtermSurface font readiness", () => {
+  it("updates an open terminal after fonts load without recreating its connection", async () => {
+    setFontLoader(vi.fn().mockResolvedValue([]));
+    renderSurface();
+    await waitFor(() => expect(mocks.terminal.open).toHaveBeenCalledTimes(1));
+    mocks.fit.mockClear();
+    await act(async () => {
+      document.documentElement.style.setProperty("--font-mono", '"New Mono", monospace');
+      window.dispatchEvent(new Event(FONT_CHANGED_EVENT));
+    });
+    await waitFor(() =>
+      expect(mocks.terminal.options).toHaveProperty("fontFamily", '"New Mono", monospace'),
+    );
+    expect(mocks.fit).toHaveBeenCalled();
+    expect(mocks.constructTerminal).toHaveBeenCalledTimes(1);
+    expect(mocks.terminal.dispose).not.toHaveBeenCalled();
+    mocks.fit.mockClear();
+    await act(async () => window.dispatchEvent(new Event(FONT_CHANGED_EVENT)));
+    await waitFor(() => expect(mocks.fit).toHaveBeenCalled());
+    expect(mocks.terminal.options).toHaveProperty("fontFamily", '"New Mono", monospace');
+    expect(mocks.constructTerminal).toHaveBeenCalledTimes(1);
+  });
   it("applies the current Tauri style nonce to xterm runtime styles", async () => {
     setFontLoader(vi.fn().mockResolvedValue([]));
     const trustedStyle = document.createElement("style");

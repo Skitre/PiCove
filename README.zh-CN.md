@@ -30,6 +30,7 @@
 - **Packages** —— 浏览 pi.dev 目录,安装和管理用户级 Extensions、Skills、Prompts 和 Themes。
 - **Extension UI 与终端** —— 扩展可以渲染自己的交互面板,集成的工作区终端一个快捷键即达。
 - **顺手好用** —— PiCove / Vercel / Apple 三套主题,自定义键盘快捷键和右键菜单,界面支持简体中文和 English。
+- **字体设置** —— 在“设置 → 外观”中分别选择界面、正文和代码字体，可搜索系统已安装字体，或导入 TTF、OTF、TTC、ZIP 到应用私有字体库。支持预览、恢复默认和删除已导入字体，无需重启，终端跟随代码字体。
 
 ![Extension 交互提问与 Git 改动面板](docs/assets/readme/features-1.png)
 

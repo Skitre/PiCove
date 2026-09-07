@@ -7,6 +7,7 @@ import { HighlightStyle, LanguageDescription, syntaxHighlighting } from "@codemi
 import { tags } from "@lezer/highlight";
 import { languages } from "@codemirror/language-data";
 import { MergeView } from "@codemirror/merge";
+import { FONT_CHANGED_EVENT } from "../../lib/fonts";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { markdownLivePreview } from "./markdown-live-preview";
 import { saveOpenFile, useFileSession } from "./file-session";
@@ -122,6 +123,8 @@ export function FileCodeEditor({
       }),
     });
     editor.current = view;
+    const measureFont = () => view.requestMeasure();
+    window.addEventListener(FONT_CHANGED_EVENT, measureFont);
     let disposed = false;
     const description = /\.(md|mdx|markdown)$/i.test(initial.current.path)
       ? null
@@ -134,6 +137,7 @@ export function FileCodeEditor({
       .catch(() => undefined);
     return () => {
       disposed = true;
+      window.removeEventListener(FONT_CHANGED_EVENT, measureFont);
       view.destroy();
       editor.current = null;
     };
@@ -177,7 +181,15 @@ export function FileConflictDiff({ disk, local }: { disk: string; local: string 
       highlightChanges: true,
       gutter: true,
     });
-    return () => view.destroy();
+    const measureFont = () => {
+      view.a.requestMeasure();
+      view.b.requestMeasure();
+    };
+    window.addEventListener(FONT_CHANGED_EVENT, measureFont);
+    return () => {
+      window.removeEventListener(FONT_CHANGED_EVENT, measureFont);
+      view.destroy();
+    };
   }, [disk, local]);
   return <div ref={ref} className="file-merge h-full min-h-0 overflow-auto" />;
 }

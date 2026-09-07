@@ -18,6 +18,18 @@ import { MenuHost } from "../../components/Menu";
 const desktopMocks = vi.hoisted(() => ({
   pick: vi.fn(),
   isDesktop: vi.fn(),
+  drop: null as null | ((event: { payload: { type: string; paths: string[] } }) => void),
+}));
+
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: async (handler: typeof desktopMocks.drop) => {
+      desktopMocks.drop = handler;
+      return () => {
+        desktopMocks.drop = null;
+      };
+    },
+  }),
 }));
 
 vi.mock("../../lib/desktop-file-access", async (importOriginal) => {
@@ -137,6 +149,22 @@ function pasteText(target: HTMLElement, text: string): boolean {
 }
 
 describe("Composer managed documents", () => {
+  it("does not turn native font drops over Settings into chat attachments", async () => {
+    desktopMocks.isDesktop.mockResolvedValue(true);
+    const request = vi
+      .spyOn(hostClient, "request")
+      .mockResolvedValue({ ok: true, result: null } as never);
+    render(<Composer />);
+    await waitFor(() => expect(desktopMocks.drop).not.toBeNull());
+    useAppStore.getState().setPage("settings");
+    request.mockClear();
+    await act(async () => {
+      desktopMocks.drop?.({ payload: { type: "drop", paths: ["/fonts/example.ttf"] } });
+    });
+    expect(request.mock.calls.some(([method]) => method === "attachment.create")).toBe(false);
+    expect(screen.queryByText("example.ttf")).not.toBeInTheDocument();
+    useAppStore.getState().setPage("chat");
+  });
   beforeEach(() => {
     desktopMocks.pick.mockReset().mockResolvedValue(["/documents/manual.pdf"]);
     desktopMocks.isDesktop.mockReset().mockResolvedValue(false);

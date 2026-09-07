@@ -28,6 +28,10 @@ dirs = "6"
 thiserror = "2"
 portable-pty = "0.9"
 base64 = "0.22.1"
+font-kit = "0.14.3"
+write-fonts = { version = "0.52", features = ["read"] }
+sha2 = "0.10"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

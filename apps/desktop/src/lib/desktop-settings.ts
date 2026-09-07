@@ -20,6 +20,7 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_FONT_SIZE,
 } from "./appearance-preferences";
+import { isFontReference, invalidateFontLibrary } from "./fonts";
 import { tCurrent } from "./i18n/use-t";
 import { useAppStore } from "./stores/app-store";
 
@@ -59,6 +60,9 @@ const DESKTOP_SETTINGS_KEYS = new Set([
   "conversationContentWidth",
   "conversationFontSize",
   "codeFontSize",
+  "uiFont",
+  "textFont",
+  "codeFont",
   "knownWorkspaces",
   "shortcutOverrides",
   "extensionUi",
@@ -118,6 +122,10 @@ function assertDesktopSettingsUpdate(patch: DesktopSettingsUpdate): void {
     !isOneOf(values.interfaceDensity, DESKTOP_INTERFACE_DENSITIES)
   ) {
     throw new Error("Invalid interface density");
+  }
+  for (const key of ["uiFont", "textFont", "codeFont"] as const) {
+    if (values[key] !== undefined && !isFontReference(values[key]))
+      throw new Error(`Invalid ${key}`);
   }
   const width = values.conversationContentWidth;
   if (
@@ -367,5 +375,24 @@ export function persistExtensionUiSettings(
     if (JSON.stringify(next) === JSON.stringify(current)) return current;
     await writeDesktopSettings({ extensionUi: next });
     return canonicalExtensionUiSettings(useAppStore.getState().desktopSettings);
+  });
+}
+
+export function removeImportedFont(id: string): Promise<void> {
+  return enqueueSettingsWrite(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      const settings = await invoke<DesktopSettings>("desktop_font_remove", { id });
+      useAppStore.getState().setDesktopSettings(settings);
+    } catch (error) {
+      // Native deletion can reset a reference before a filesystem cleanup fails.
+      const snapshot = await invoke<DesktopSettingsSnapshot>("desktop_settings_get").catch(
+        () => null,
+      );
+      if (snapshot) useAppStore.getState().setDesktopSettings(snapshot.settings);
+      throw error;
+    } finally {
+      invalidateFontLibrary();
+    }
   });
 }

@@ -17,6 +17,7 @@ import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 import { rendererFormFor } from "../../lib/extension-ui-renderer-form";
 import { applyTheme, type AppThemeFamily } from "../../lib/theme";
 import { applyLanguage } from "../../lib/i18n";
+import { applyFontPreferences, invalidateFontLibrary } from "../../lib/fonts";
 import { useT } from "../../lib/i18n/use-t";
 import { useAppStore } from "../../lib/stores/app-store";
 import { ExtensionStatusRows, ExtensionWidgetRows } from "./ExtensionWidgetContent";
@@ -41,6 +42,7 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
   const [message, setMessage] = useState<FloatContentMessage | null>(null);
   const setSurfaceLanguage = useAppStore((state) => state.setSurfaceLanguage);
   const geometryTimer = useRef<number | undefined>(undefined);
+  const fontsRevision = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
@@ -58,6 +60,11 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
         family: next.chrome.themeFamily as AppThemeFamily,
         persist: false,
       });
+      if (fontsRevision.current !== next.chrome.fontLibraryRevision) {
+        fontsRevision.current = next.chrome.fontLibraryRevision;
+        invalidateFontLibrary();
+      }
+      applyFontPreferences(next.chrome.fontPreferences, false);
       document.title = next.chrome.label;
     }).then((unlisten) => {
       if (cancelled) unlisten();
