@@ -46,7 +46,7 @@ export function ExtensionFloatTitleBarButton({
   label,
   icon: Icon,
   dataKey,
-  active = false,
+  active,
   busy = false,
   disabled = false,
   onClick,
@@ -66,13 +66,16 @@ export function ExtensionFloatTitleBarButton({
       type="button"
       data-extension-float-control={dataKey}
       aria-label={label}
+      aria-pressed={active}
       title={label}
       aria-busy={busy || undefined}
       disabled={disabled}
       // Above the shell's own drag layer, and swallowing the pointer press so
       // reaching for a button never starts a window drag.
-      className={`relative z-40 flex size-6 items-center justify-center rounded hover:text-foreground disabled:opacity-60 ${
-        active ? "text-accent" : "text-muted"
+      className={`relative z-40 flex size-6 items-center justify-center rounded disabled:opacity-60 ${
+        active
+          ? "bg-accent text-accent-foreground"
+          : "text-muted hover:bg-surface-overlay hover:text-foreground"
       }`}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}

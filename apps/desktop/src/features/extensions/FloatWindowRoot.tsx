@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { LayoutGrid, Pin, X } from "lucide-react";
+import { LayoutGrid, Pin } from "lucide-react";
 import type { ScreenRect } from "@pideck/protocol";
 import { type FloatContentMessage, type FloatIntent } from "../../lib/extension-float-channel";
 import {
@@ -280,11 +280,6 @@ export function FloatWindowRoot({ slotId }: { slotId: string }) {
           icon={LayoutGrid}
           dataKey="placement"
           onClick={openPlacementMenu}
-        />
-        <ExtensionFloatTitleBarButton
-          label={t("extensionUiFloatClose", { name: label, family: "" })}
-          icon={X}
-          onClick={() => intent({ kind: "close", slotId })}
         />
       </ExtensionFloatTitleBar>
       <div

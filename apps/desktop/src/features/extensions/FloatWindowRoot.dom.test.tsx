@@ -101,6 +101,31 @@ afterEach(() => {
 });
 
 describe("FloatWindowRoot placement", () => {
+  it("reflects confirmed pin state and omits the title bar close action", async () => {
+    render(<FloatWindowRoot slotId={SLOT} />);
+    const message = contentMessage();
+    await publish(message);
+
+    const pin = screen.getByRole("button", { name: "Pin pi-subagents Widget" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: "Close pi-subagents Widget" })).toBeNull();
+    await userEvent.click(pin);
+    expect(transport.intents).toContainEqual({ kind: "togglePin", slotId: SLOT });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+
+    await publish({ ...message, chrome: { ...message.chrome, pinned: true } });
+    const unpin = screen.getByRole("button", { name: "Unpin pi-subagents Widget" });
+    expect(unpin).toHaveAttribute("aria-pressed", "true");
+    expect(unpin).toHaveClass("bg-accent", "text-accent-foreground");
+    await userEvent.click(unpin);
+    await publish(message);
+    expect(screen.getByRole("button", { name: "Pin pi-subagents Widget" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(pin).not.toHaveClass("bg-accent");
+  });
+
   it("drags from blank body space as well as the title bar", async () => {
     const { container } = render(<FloatWindowRoot slotId={SLOT} />);
     await publish(contentMessage());

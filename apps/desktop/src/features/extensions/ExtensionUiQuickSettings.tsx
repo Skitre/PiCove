@@ -262,7 +262,7 @@ function QuickPanel({
             value={query}
             placeholder={t("extensionUiQuickSearch")}
             onChange={(event) => setQuery(event.target.value)}
-            className="h-9 w-full min-w-0 rounded-md border border-border bg-surface pl-8 pr-2 text-xs outline-none focus:ring-2 focus:ring-focus"
+            className="extension-ui-quick-search-input h-9 w-full min-w-0 rounded-md border border-border bg-surface pl-8 pr-2 text-xs outline-none"
           />
         </label>
       </div>
