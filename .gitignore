@@ -24,6 +24,7 @@ artifacts/
 .artifacts/
 
 # Local agent planning and scratch files
+/.claude/
 /.planning/
 /notes.md
 /task_plan.md
