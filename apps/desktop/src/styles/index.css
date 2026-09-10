@@ -506,6 +506,11 @@ html[data-theme-family="apple"] [data-pideck-app][data-window-platform="windows"
   --theme-sidebar-material: color-mix(in srgb, var(--color-sidebar) 40%, transparent);
 }
 
+html[data-theme-family="apple"][data-window-material="opaque"]
+  [data-pideck-app][data-window-platform="windows"] {
+  --theme-sidebar-material: var(--color-sidebar);
+}
+
 html[data-theme-family="apple"].light {
   --color-surface: #f5f5f7;
   --color-surface-raised: #ffffff;

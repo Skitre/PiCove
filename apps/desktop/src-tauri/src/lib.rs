@@ -41,8 +41,24 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_page_load(|webview, payload| {
+            #[cfg(target_os = "windows")]
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Finished
+                && windows_version::OsVersion::current().build < 22_000
+            {
+                let _ = webview.eval("document.documentElement.dataset.windowMaterial = 'opaque';");
+            }
+        })
         .setup(|app| {
             system_tray::install(app)?;
+
+            #[cfg(target_os = "windows")]
+            if windows_version::OsVersion::current().build < 22_000 {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_effects(None::<tauri::utils::config::WindowEffectsConfig>);
+                }
+            }
 
             let mut settings = DesktopSettingsStore::load(app.handle())?;
             settings.ensure_default_project_workspace()?;
