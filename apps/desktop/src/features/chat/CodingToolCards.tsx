@@ -210,7 +210,7 @@ export function ShellToolCard(props: ToolCardProps) {
       props={props}
     >
       <div className="overflow-hidden rounded-md bg-[#171918] text-[#cbd5cc]">
-        <div className="border-b border-white/10 px-3 py-2 font-mono text-[11px] leading-5 text-[#e3e8e4]">
+        <div className="max-h-72 overflow-auto border-b border-white/10 px-3 py-2 font-mono text-[11px] leading-5 text-[#e3e8e4]">
           <span className="select-none text-[#7f9385]">$ </span>
           <span className="whitespace-pre-wrap break-words">{command}</span>
         </div>
