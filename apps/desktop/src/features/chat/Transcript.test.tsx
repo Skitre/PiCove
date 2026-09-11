@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AssistantOrderedContent, DurationLabel, ExecutionTrace, ExtensionMessageRow } from "./Transcript";
+import {
+  AssistantOrderedContent,
+  DurationLabel,
+  ExecutionTrace,
+  ExtensionMessageRow,
+} from "./Transcript";
 import type { TranscriptBlock, TranscriptRow } from "./transcript-model";
 
 function toolBlock(id: string, status: "running" | "done"): TranscriptBlock {
@@ -85,6 +90,26 @@ describe("ExecutionTrace", () => {
 });
 
 describe("AssistantOrderedContent", () => {
+  it.each([" \n\t ", "\n<dcp-id>m013</dcp-id>\n"])(
+    "keeps all six actions together across text with no visible content: %j",
+    (separator) => {
+      const tools = Array.from({ length: 6 }, (_, index) => toolBlock(`tool-${index}`, "done"));
+      const markup = renderToStaticMarkup(
+        <AssistantOrderedContent
+          blocks={[...tools.slice(0, 5), { kind: "text", text: separator }, tools[5]!]}
+          mode="static"
+          showCaret={false}
+          turnActive={false}
+        />,
+      );
+
+      expect(markup).toContain("6 actions completed");
+      expect(markup).not.toContain("5 actions completed");
+      expect(markup).not.toContain("1 action completed");
+      expect(markup).not.toContain("dcp-id");
+    },
+  );
+
   it("keeps only the trailing trace active", () => {
     const markup = renderToStaticMarkup(
       <AssistantOrderedContent

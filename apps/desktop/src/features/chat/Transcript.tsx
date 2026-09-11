@@ -182,6 +182,7 @@ export function Transcript() {
   const tailAnchorRef = useRef<HTMLDivElement>(null);
   const readingAnchorTopRef = useRef<number | null>(null);
   const programmaticScrollTopRef = useRef<number | null>(null);
+  const disclosureAnchorRef = useRef<{ element: Element; top: number } | null>(null);
 
   const refreshReadingAnchor = useCallback(() => {
     const tail = tailAnchorRef.current;
@@ -224,6 +225,20 @@ export function Transcript() {
     refreshReadingAnchor();
   }, [cancelScheduledScroll, refreshReadingAnchor, updateFollowing]);
 
+  const alignDisclosure = useCallback(() => {
+    const anchor = disclosureAnchorRef.current;
+    const element = scrollRef.current;
+    if (!anchor || !element) return;
+    if (!anchor.element.isConnected) {
+      disclosureAnchorRef.current = null;
+      return;
+    }
+    element.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
+    programmaticScrollTopRef.current = element.scrollTop;
+    scrollMetricsRef.current = { top: element.scrollTop, height: element.scrollHeight };
+    refreshReadingAnchor();
+  }, [refreshReadingAnchor]);
+
   const cancelNavigation = useCallback(() => {
     navigationRef.current = null;
     setNavigationKey(null);
@@ -252,6 +267,7 @@ export function Transcript() {
   }, [alignNavigation]);
 
   function navigateToTurn(key: string) {
+    disclosureAnchorRef.current = null;
     cancelNavigation();
     stopFollowing();
     navigationRef.current = key;
@@ -266,6 +282,7 @@ export function Transcript() {
       previous.leafId === session?.leafId ||
       (previous.leafId && session?.entries?.some((entry) => entry.id === previous.leafId));
     if (!sameSession || !continues || page !== "chat") {
+      disclosureAnchorRef.current = null;
       cancelNavigation();
       if (sameSession && !continues) {
         setBranchVersion((version) => version + 1);
@@ -467,7 +484,9 @@ export function Transcript() {
     expandAnchorRef.current = null;
     const element = scrollRef.current;
     if (!element) return;
-    if (followingRef.current) {
+    if (disclosureAnchorRef.current) {
+      alignDisclosure();
+    } else if (followingRef.current) {
       alignToBottom();
     } else {
       const readingTop = readingAnchorTopRef.current;
@@ -488,7 +507,7 @@ export function Transcript() {
       batchSizerRef.current.record(performance.now() - batchStartRef.current);
       batchStartRef.current = null;
     }
-  }, [hidden, alignToBottom]);
+  }, [hidden, alignDisclosure, alignToBottom]);
 
   const lastAssistantRow = [...rows].reverse().find((row) => row.role === "assistant");
   const streamingAssistantKey = findStreamingAssistantKey(
@@ -505,6 +524,7 @@ export function Transcript() {
     session && !session.isIdle && tailRow?.role === "assistant" ? tailRow.key : undefined;
 
   useLayoutEffect(() => {
+    disclosureAnchorRef.current = null;
     const remembered = sessionKey !== null ? readTranscriptScrollPosition(sessionKey) : undefined;
     const element = scrollRef.current;
     if (remembered !== undefined && element) {
@@ -533,18 +553,20 @@ export function Transcript() {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (navigationRef.current) scheduleNavigationAlignment();
+      if (disclosureAnchorRef.current) alignDisclosure();
+      else if (navigationRef.current) scheduleNavigationAlignment();
       else if (followingRef.current) scheduleBottomAlignment();
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [scheduleBottomAlignment, scheduleNavigationAlignment]);
+  }, [alignDisclosure, scheduleBottomAlignment, scheduleNavigationAlignment]);
 
   useEffect(() => cancelScheduledScroll, [cancelScheduledScroll]);
 
   function scrollToBottom() {
     const element = scrollRef.current;
     if (!element) return;
+    disclosureAnchorRef.current = null;
     cancelNavigation();
     updateFollowing(true);
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
@@ -560,13 +582,37 @@ export function Transcript() {
         data-transcript-scroll
         className="scrollbar-subtle h-full overflow-y-auto px-3 py-4 sm:px-6 sm:py-5"
         onWheel={(event) => {
+          disclosureAnchorRef.current = null;
           cancelNavigation();
           lastUserScrollAtRef.current = performance.now();
           if (event.deltaY < 0) stopFollowing();
         }}
-        onPointerDown={cancelNavigation}
-        onTouchStart={cancelNavigation}
+        onPointerDown={() => {
+          disclosureAnchorRef.current = null;
+          cancelNavigation();
+        }}
+        onTouchStart={() => {
+          disclosureAnchorRef.current = null;
+          cancelNavigation();
+        }}
+        onClickCapture={(event) => {
+          const control =
+            event.target instanceof Element
+              ? event.target.closest("button[aria-expanded][aria-controls], summary")
+              : null;
+          if (!control) return;
+          cancelNavigation();
+          lastUserScrollAtRef.current = performance.now();
+          stopFollowing();
+          // A manual toggle grows below its control. Keep that control in place
+          // through the animation, including native browser scroll anchoring.
+          disclosureAnchorRef.current = {
+            element: control,
+            top: control.getBoundingClientRect().top,
+          };
+        }}
         onKeyDown={(event) => {
+          disclosureAnchorRef.current = null;
           if (
             ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)
           )
@@ -574,6 +620,7 @@ export function Transcript() {
         }}
         onScroll={(event) => {
           const element = event.currentTarget;
+          if (disclosureAnchorRef.current) return;
           // Genuine user scrolls move the reading anchor; echoes of our own
           // compensation (within a pixel of the last programmatic value)
           // must not, or batch corrections would re-baseline onto their own
@@ -1005,18 +1052,6 @@ const TranscriptRowView = memo(function TranscriptRowView({
   if (row.role === "summary") return <SummaryRow row={row} />;
   if (row.role === "event") return <SessionEventRow row={row} />;
 
-  const sections = row.sections ?? {
-    ordered: row.blocks,
-    initialThinking: [],
-    intro: [],
-    activity: row.blocks,
-    final: [],
-    stepCount: row.blocks.filter((block) => block.kind === "tool").length,
-  };
-  const lastTextBlock = [...row.blocks]
-    .reverse()
-    .find((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text");
-
   return (
     <div className="group/assistant relative w-full">
       <div className="flex h-7 items-center gap-2">
@@ -1024,13 +1059,7 @@ const TranscriptRowView = memo(function TranscriptRowView({
         {working && <span className="text-[11px] text-muted">{t("transcriptPiWorking")}</span>}
       </div>
       <div className="mt-2 min-w-0 space-y-3">
-        <AssistantOrderedContent
-          blocks={sections.ordered}
-          mode={mode}
-          showCaret={showCaret}
-          lastTextBlock={lastTextBlock}
-          turnActive={working}
-        />
+        <AssistantTurnContent row={row} mode={mode} showCaret={showCaret} turnActive={working} />
         {row.outcome && (row.outcome.status === "error" || row.outcome.status === "aborted") && (
           <AssistantOutcome outcome={row.outcome} />
         )}
@@ -1231,6 +1260,101 @@ function ForkFromTurnButton({ entryId, className = "" }: { entryId: string; clas
   );
 }
 
+export function AssistantTurnContent({
+  row,
+  mode,
+  showCaret,
+  turnActive,
+}: {
+  row: TranscriptRow;
+  mode: "streaming" | "static";
+  showCaret: boolean;
+  turnActive: boolean;
+}) {
+  const blocks = row.sections?.ordered ?? row.blocks;
+  const finalBlocks = row.sections?.final ?? [];
+  const finalBlockSet = new Set(finalBlocks);
+  const processBlocks = blocks.filter((block) => !finalBlockSet.has(block));
+  const lastTextBlock = [...blocks]
+    .reverse()
+    .find((block): block is Extract<TranscriptBlock, { kind: "text" }> => block.kind === "text");
+  const pendingActivity = blocks.some((block) => {
+    if (block.kind === "tool") {
+      return block.tool.status === "waiting" || block.tool.status === "running";
+    }
+    if (block.kind === "extension") {
+      const status = block.row.extensionPresentation?.status;
+      return status === "pending" || status === "running";
+    }
+    return false;
+  });
+  const summarizeProcess =
+    !turnActive &&
+    mode === "static" &&
+    !pendingActivity &&
+    row.outcome?.status !== "error" &&
+    row.outcome?.status !== "aborted" &&
+    processBlocks.length > 0 &&
+    finalBlocks.length > 0;
+
+  if (!summarizeProcess) {
+    return (
+      <AssistantOrderedContent
+        blocks={blocks}
+        mode={mode}
+        showCaret={showCaret}
+        lastTextBlock={lastTextBlock}
+        turnActive={turnActive}
+      />
+    );
+  }
+
+  // Mount a fresh disclosure only after the whole turn settles. Its local
+  // state then preserves manual reopening across later transcript updates.
+  return (
+    <div>
+      <ExecutionTrace
+        blocks={processBlocks}
+        stepCount={
+          processBlocks.filter((block) => block.kind === "tool" || block.kind === "extension")
+            .length
+        }
+        mode="static"
+        showCaret={false}
+        turnActive={false}
+        wholeTurn
+      />
+      <hr className="mb-3 mt-1 border-border/60" />
+      <div className="space-y-3">
+        <AssistantOrderedContent
+          blocks={finalBlocks}
+          mode="static"
+          showCaret={false}
+          turnActive={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+function isVisibleAssistantBlock(block: TranscriptBlock): boolean {
+  return block.kind !== "text" || sanitizeAgentText(block.text).trim().length > 0;
+}
+
+function hasMultipleActivityGroups(blocks: TranscriptBlock[]): boolean {
+  let hasActivity = false;
+  let separated = false;
+  for (const block of blocks) {
+    if (block.kind === "tool" || block.kind === "extension") {
+      if (separated) return true;
+      hasActivity = true;
+    } else if (block.kind !== "thinking" && hasActivity) {
+      separated = true;
+    }
+  }
+  return false;
+}
+
 /**
  * Keep assistant content in the order emitted by Pi. Reasoning and tool calls
  * are grouped only while they are adjacent, so a provider's text/thinking/tool
@@ -1302,6 +1426,8 @@ export function AssistantOrderedContent({
   };
 
   blocks.forEach((block, index) => {
+    // Hidden provider metadata and whitespace must not split adjacent work.
+    if (!isVisibleAssistantBlock(block)) return;
     if (block.kind === "thinking" || block.kind === "tool" || block.kind === "extension") {
       workBlocks.push(block);
       return;
@@ -1330,6 +1456,7 @@ export function ExecutionTrace({
   showCaret,
   lastTextBlock,
   turnActive,
+  wholeTurn = false,
 }: {
   blocks: TranscriptBlock[];
   stepCount: number;
@@ -1337,9 +1464,13 @@ export function ExecutionTrace({
   showCaret: boolean;
   lastTextBlock?: Extract<TranscriptBlock, { kind: "text" }>;
   turnActive: boolean;
+  wholeTurn?: boolean;
 }) {
   const t = useT();
   const contentId = useId();
+  const visibleBlocks = blocks.filter(isVisibleAssistantBlock);
+  // The outer process already provides the disclosure for a single group.
+  const preserveGroups = wholeTurn && (stepCount === 0 || hasMultipleActivityGroups(visibleBlocks));
   const tools = blocks.filter(
     (block): block is Extract<TranscriptBlock, { kind: "tool" }> => block.kind === "tool",
   );
@@ -1383,23 +1514,36 @@ export function ExecutionTrace({
         : t(stepCount === 1 ? "transcriptTraceCompletedOne" : "transcriptTraceCompletedMany", {
             count: stepCount,
           });
+  let summaryLabel = traceLabel;
+  if (wholeTurn) {
+    summaryLabel =
+      stepCount === 0
+        ? t("transcriptProcess")
+        : t(stepCount === 1 ? "transcriptProcessOne" : "transcriptProcessMany", {
+            count: stepCount,
+          });
+    if (failed > 0) summaryLabel += ` · ${t("transcriptProcessFailed", { count: failed })}`;
+    if (aborted > 0) summaryLabel += ` · ${t("transcriptProcessStopped", { count: aborted })}`;
+  }
   const traceLabelWithMedia =
     imageCount > 0
-      ? `${traceLabel} / ${t(
+      ? `${summaryLabel} / ${t(
           imageCount === 1 ? "transcriptTraceImageOne" : "transcriptTraceImageMany",
           { count: imageCount },
         )}`
-      : traceLabel;
+      : summaryLabel;
   return (
     <div className="execution-trace">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
+        className={`flex h-8 w-full items-center gap-2 rounded-md text-left text-xs font-medium transition-colors hover:text-foreground ${
+          wholeTurn ? "text-muted" : "text-foreground/80"
+        }`}
         aria-expanded={open}
         aria-controls={contentId}
       >
-        {active ? (
+        {wholeTurn ? null : active ? (
           <span className="execution-trace-spinner text-muted" aria-hidden="true">
             <LoaderCircle size={14} />
           </span>
@@ -1411,39 +1555,51 @@ export function ExecutionTrace({
         </span>
         <ChevronRight
           size={13}
-          className={`ml-auto transition-transform duration-[160ms] motion-reduce:transition-none ${
+          className={`ml-auto shrink-0 transition-transform duration-[160ms] motion-reduce:transition-none ${
             open ? "rotate-90" : ""
           }`}
         />
       </button>
       <CollapsibleRegion open={open} id={contentId}>
-        <div className="ml-2 mt-1 space-y-1 border-l border-border py-1 pl-4">
-          {blocks.map((block, index) =>
-            block.kind === "thinking" ? (
-              <ThinkingBlock
-                key={`activity:${block.kind}:${index}`}
-                content={block.text}
-                defaultOpen={active}
-                streaming={active}
-              />
-            ) : block.kind === "text" ? (
-              <div key={`activity:${block.kind}:${index}`} className="py-1 text-foreground/85">
+        {preserveGroups ? (
+          <div className="space-y-3 py-1">
+            <AssistantOrderedContent
+              blocks={visibleBlocks}
+              mode={mode}
+              showCaret={showCaret}
+              lastTextBlock={lastTextBlock}
+              turnActive={turnActive}
+            />
+          </div>
+        ) : (
+          <div className="ml-2 mt-1 space-y-1 border-l border-border py-1 pl-4">
+            {visibleBlocks.map((block, index) =>
+              block.kind === "thinking" ? (
+                <ThinkingBlock
+                  key={`activity:${block.kind}:${index}`}
+                  content={block.text}
+                  defaultOpen={active}
+                  streaming={active}
+                />
+              ) : block.kind === "text" ? (
+                <div key={`activity:${block.kind}:${index}`} className="py-1 text-foreground/85">
+                  <AssistantBlock
+                    block={block}
+                    mode={mode}
+                    showCaret={showCaret && block === lastTextBlock}
+                  />
+                </div>
+              ) : (
                 <AssistantBlock
+                  key={`activity:${block.kind}:${index}`}
                   block={block}
                   mode={mode}
-                  showCaret={showCaret && block === lastTextBlock}
+                  showCaret={false}
                 />
-              </div>
-            ) : (
-              <AssistantBlock
-                key={`activity:${block.kind}:${index}`}
-                block={block}
-                mode={mode}
-                showCaret={false}
-              />
-            ),
-          )}
-        </div>
+              ),
+            )}
+          </div>
+        )}
       </CollapsibleRegion>
     </div>
   );

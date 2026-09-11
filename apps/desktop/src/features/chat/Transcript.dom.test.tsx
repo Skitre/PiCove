@@ -72,16 +72,48 @@ function session(sessionId: string, text: string): SessionSnapshot {
   };
 }
 
+function processSession(): SessionSnapshot {
+  return {
+    ...session(SESSION_A, "Inspect the project"),
+    messages: [
+      { role: "user", content: "Inspect the project" },
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "thinking", thinking: "Check the files" },
+          { type: "toolCall", id: "inspect", name: "bash", arguments: { command: "ls" } },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "inspect",
+        toolName: "bash",
+        content: [{ type: "text", text: "README.md" }],
+        isError: false,
+      },
+      { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "All done" }] },
+    ],
+  };
+}
+
 class TestResizeObserver {
   static instances: TestResizeObserver[] = [];
+  readonly elements = new Set<Element>();
 
   constructor(private readonly callback: ResizeObserverCallback) {
     TestResizeObserver.instances.push(this);
   }
 
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe(element: Element) {
+    this.elements.add(element);
+  }
+  unobserve(element: Element) {
+    this.elements.delete(element);
+  }
+  disconnect() {
+    this.elements.clear();
+  }
 
   trigger() {
     this.callback([], this as unknown as ResizeObserver);
@@ -207,6 +239,32 @@ describe("Transcript Session-open scrolling", () => {
       } as DOMRect;
     });
     return scroll;
+  }
+
+  function mockProcessLayout(container: HTMLElement) {
+    const scroll = container.querySelector<HTMLElement>("[data-transcript-scroll]")!;
+    const process = screen.getByRole("button", { name: "Execution process · 1 action" });
+    const layout = { height: 1_000, processOffset: 740 };
+    let top = 0;
+    Object.defineProperties(scroll, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, get: () => layout.height },
+      scrollTop: {
+        configurable: true,
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(value, layout.height - 300));
+        },
+      },
+    });
+    vi.spyOn(process, "getBoundingClientRect").mockImplementation(
+      () => new DOMRect(0, layout.processOffset - top, 400, 32),
+    );
+    const content = container.querySelector("[data-transcript-content]")!;
+    const observer = TestResizeObserver.instances.find((instance) =>
+      instance.elements.has(content),
+    )!;
+    return { scroll, process, layout, resize: () => act(() => observer.trigger()) };
   }
 
   it("navigates to early history in batches beyond the automatic cap while retaining the tail and session", async () => {
@@ -421,6 +479,131 @@ describe("Transcript Session-open scrolling", () => {
     expect(
       screen.queryByRole("button", { name: "Jump to latest message" }),
     ).not.toBeInTheDocument();
+  });
+
+  it.each(["pointer", "Enter", "Space"])(
+    "keeps a process disclosure in place during expansion via %s, even with a queued tail alignment",
+    async (activation) => {
+      const user = userEvent.setup();
+      useAppStore.setState({ session: processSession() });
+      const { container } = render(<Transcript />);
+      const { scroll, process, layout, resize } = mockProcessLayout(container);
+      flushFrames();
+      const originalTop = process.getBoundingClientRect().top;
+      expect(scroll.scrollTop).toBe(700);
+      resize();
+
+      if (activation === "pointer") {
+        await user.click(process);
+      } else {
+        process.focus();
+        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      }
+      expect(process).toHaveAttribute("aria-expanded", "true");
+
+      for (const height of [1_200, 1_600]) {
+        layout.height = height;
+        // Native scroll anchoring can keep the final answer at the bottom as
+        // the disclosure animates. The clicked header must stay in place.
+        scroll.scrollTop = height - 300;
+        fireEvent.scroll(scroll);
+        resize();
+        flushFrames();
+        expect(scroll.scrollTop).toBe(700);
+        expect(process.getBoundingClientRect().top).toBe(originalTop);
+      }
+      expect(screen.getByRole("button", { name: "Jump to latest message" })).toBeVisible();
+    },
+  );
+
+  it("lets manual scrolling release the disclosure anchor and resume following near the bottom", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ session: processSession() });
+    const { container } = render(<Transcript />);
+    const { scroll, process, layout, resize } = mockProcessLayout(container);
+    flushFrames();
+    await user.click(process);
+    layout.height = 1_600;
+    resize();
+    flushFrames();
+
+    fireEvent.wheel(scroll, { deltaY: -50 });
+    scroll.scrollTop = 650;
+    fireEvent.scroll(scroll);
+    resize();
+    flushFrames();
+    expect(scroll.scrollTop).toBe(650);
+
+    fireEvent.wheel(scroll, { deltaY: 640 });
+    scroll.scrollTop = 1_290;
+    fireEvent.scroll(scroll);
+    layout.height = 1_700;
+    resize();
+    flushFrames();
+    expect(scroll.scrollTop).toBe(1_400);
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest message" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("lets jump to latest take over from an expanded process", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ session: processSession() });
+    const { container } = render(<Transcript />);
+    const { scroll, process, layout, resize } = mockProcessLayout(container);
+    Object.defineProperty(scroll, "scrollTo", {
+      configurable: true,
+      value: ({ top }: ScrollToOptions) => {
+        scroll.scrollTop = top ?? 0;
+      },
+    });
+    flushFrames();
+    await user.click(process);
+    layout.height = 1_600;
+    resize();
+    flushFrames();
+
+    await user.click(screen.getByRole("button", { name: "Jump to latest message" }));
+    fireEvent.scroll(scroll);
+    expect(scroll.scrollTop).toBe(1_300);
+    layout.height = 1_700;
+    resize();
+    flushFrames();
+    expect(scroll.scrollTop).toBe(1_400);
+    expect(
+      screen.queryByRole("button", { name: "Jump to latest message" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("lets minimap navigation and a new session replace a disclosure anchor", async () => {
+    const user = userEvent.setup();
+    const original = processSession();
+    original.messages.unshift({ role: "user", content: "Earlier prompt" });
+    useAppStore.setState({ session: original });
+    const { container } = render(<Transcript />);
+    const { scroll, process, layout, resize } = mockProcessLayout(container);
+    const firstRow = container.querySelector<HTMLElement>(".transcript-row")!;
+    vi.spyOn(firstRow, "getBoundingClientRect").mockImplementation(
+      () => new DOMRect(0, 100 - scroll.scrollTop, 400, 40),
+    );
+    flushFrames();
+    await user.click(process);
+    layout.height = 1_600;
+    resize();
+    flushFrames();
+
+    const rail = screen.getByRole("listbox", { name: "Conversation minimap" });
+    fireEvent.keyDown(rail, { key: "Home" });
+    fireEvent.keyDown(rail, { key: "Enter" });
+    flushFrames();
+    expect(scroll.scrollTop).toBe(88);
+    resize();
+    flushFrames();
+    expect(scroll.scrollTop).toBe(88);
+
+    act(() => useAppStore.setState({ session: session(SESSION_B, "Next session") }));
+    flushFrames();
+    expect(scroll.scrollTop).toBe(1_300);
   });
 
   it("opens a row context menu and copies the complete message", async () => {
