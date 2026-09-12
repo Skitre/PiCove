@@ -2989,6 +2989,7 @@ dependencies = [
  "tokio",
  "uuid",
  "windows-sys 0.61.2",
+ "windows-version",
  "write-fonts",
  "zip 2.4.2",
 ]
