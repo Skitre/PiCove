@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetInternalRuntimeForTests } from "./internal-runtime.js";
 
 let root: string | undefined;
@@ -141,8 +141,10 @@ describe("PiDeck package-manager cancellation patch", () => {
     const pid = Number(await waitForFile(pidFile));
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      expect(outcome).toBe("resolved");
+      // Completion must not wait for the descendant to close its inherited pipes.
+      // Poll the outcome so slow process startup on CI is not part of the contract.
+      await vi.waitFor(() => expect(outcome).toBe("resolved"), { timeout: 5_000 });
+      expect(processAlive(pid)).toBe(true);
     } finally {
       if (processAlive(pid)) {
         try {
@@ -181,8 +183,8 @@ describe("PiDeck package-manager cancellation patch", () => {
     const pid = Number(await waitForFile(pidFile));
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      expect(outcome).toBe("resolved");
+      await vi.waitFor(() => expect(outcome).toBe("resolved"), { timeout: 5_000 });
+      expect(processAlive(pid)).toBe(true);
     } finally {
       if (processAlive(pid)) {
         try {
