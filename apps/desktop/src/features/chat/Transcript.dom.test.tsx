@@ -204,6 +204,7 @@ describe("Transcript Session-open scrolling", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     delete (navigator as { clipboard?: Clipboard }).clipboard;
@@ -484,7 +485,10 @@ describe("Transcript Session-open scrolling", () => {
   it.each(["pointer", "Enter", "Space"])(
     "keeps a process disclosure in place during expansion via %s, even with a queued tail alignment",
     async (activation) => {
-      const user = userEvent.setup();
+      // Advance event delays explicitly so parallel DOM tests cannot starve
+      // keyboard activation. Animation frames remain under flushFrames control.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       useAppStore.setState({ session: processSession() });
       const { container } = render(<Transcript />);
       const { scroll, process, layout, resize } = mockProcessLayout(container);
@@ -493,12 +497,13 @@ describe("Transcript Session-open scrolling", () => {
       expect(scroll.scrollTop).toBe(700);
       resize();
 
-      if (activation === "pointer") {
-        await user.click(process);
-      } else {
-        process.focus();
-        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
-      }
+      if (activation !== "pointer") process.focus();
+      const interaction =
+        activation === "pointer"
+          ? user.click(process)
+          : user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      await vi.runAllTimersAsync();
+      await interaction;
       expect(process).toHaveAttribute("aria-expanded", "true");
 
       for (const height of [1_200, 1_600]) {
@@ -516,13 +521,12 @@ describe("Transcript Session-open scrolling", () => {
     },
   );
 
-  it("lets manual scrolling release the disclosure anchor and resume following near the bottom", async () => {
-    const user = userEvent.setup();
+  it("lets manual scrolling release the disclosure anchor and resume following near the bottom", () => {
     useAppStore.setState({ session: processSession() });
     const { container } = render(<Transcript />);
     const { scroll, process, layout, resize } = mockProcessLayout(container);
     flushFrames();
-    await user.click(process);
+    fireEvent.click(process);
     layout.height = 1_600;
     resize();
     flushFrames();
@@ -546,8 +550,7 @@ describe("Transcript Session-open scrolling", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("lets jump to latest take over from an expanded process", async () => {
-    const user = userEvent.setup();
+  it("lets jump to latest take over from an expanded process", () => {
     useAppStore.setState({ session: processSession() });
     const { container } = render(<Transcript />);
     const { scroll, process, layout, resize } = mockProcessLayout(container);
@@ -558,12 +561,12 @@ describe("Transcript Session-open scrolling", () => {
       },
     });
     flushFrames();
-    await user.click(process);
+    fireEvent.click(process);
     layout.height = 1_600;
     resize();
     flushFrames();
 
-    await user.click(screen.getByRole("button", { name: "Jump to latest message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest message" }));
     fireEvent.scroll(scroll);
     expect(scroll.scrollTop).toBe(1_300);
     layout.height = 1_700;
@@ -575,8 +578,7 @@ describe("Transcript Session-open scrolling", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("lets minimap navigation and a new session replace a disclosure anchor", async () => {
-    const user = userEvent.setup();
+  it("lets minimap navigation and a new session replace a disclosure anchor", () => {
     const original = processSession();
     original.messages.unshift({ role: "user", content: "Earlier prompt" });
     useAppStore.setState({ session: original });
@@ -587,7 +589,7 @@ describe("Transcript Session-open scrolling", () => {
       () => new DOMRect(0, 100 - scroll.scrollTop, 400, 40),
     );
     flushFrames();
-    await user.click(process);
+    fireEvent.click(process);
     layout.height = 1_600;
     resize();
     flushFrames();
