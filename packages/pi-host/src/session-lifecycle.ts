@@ -19,7 +19,13 @@ import { buildSessionSnapshot } from "./session-snapshot.js";
 import { getQueueSnapshot } from "./queue-state.js";
 import { bindForCandidate } from "./extension-ui-lifecycle.js";
 import { type GraphOperationKind } from "./locks.js";
-import { extractLatestAssistantText, generateRefinedSessionTitle } from "./session-title.js";
+import {
+  extractFirstUserText,
+  extractLatestAssistantText,
+  generateRefinedSessionTitle,
+} from "./session-title.js";
+import { withStableGraphRead } from "./stable-graph-read.js";
+import { isPideckNoModel } from "./no-model.js";
 import type { WorkspaceGraphFactory } from "./workspace-graph-factory.js";
 import type { ManagedSessionInfo, WorkspaceGraph } from "./workspace-graph-types.js";
 import {
@@ -350,14 +356,47 @@ export async function cleanupArchivedSessions(
   });
 }
 
+type SessionTitleVersion = {
+  graph: WorkspaceGraph;
+  workspaceRevision: number;
+  name: string | undefined;
+  entryId: string | undefined;
+  leafId: string | null;
+};
+
+function matchesTitleVersion(
+  manager: SessionManager | null,
+  expected?: SessionTitleVersion,
+): boolean {
+  return (
+    !expected ||
+    Boolean(
+      manager &&
+      manager.getSessionName() === expected.name &&
+      manager.getEntries().at(-1)?.id === expected.entryId &&
+      manager.getLeafId() === expected.leafId,
+    )
+  );
+}
+
 export async function renameSession(
   factory: WorkspaceGraphFactory,
   requestId: string,
   sessionId: string,
   sessionPath: string,
   name: string,
+  expected?: SessionTitleVersion,
 ): Promise<{ sessionId: string; name: string; session?: SessionSnapshot } | { error: HostError }> {
   return withSessionFileMutation(factory, requestId, "session.rename", async (g) => {
+    if (
+      expected &&
+      (g !== expected.graph ||
+        factory.server!.getIdentity().workspaceRevision !== expected.workspaceRevision)
+    ) {
+      return {
+        error: createHostError("STALE_REVISION", "Workspace changed while generating the title"),
+      };
+    }
     const [activeSessions, archivedSessions] = await Promise.all([
       listSessionFiles(factory, g, false),
       listSessionFiles(factory, g, true),
@@ -386,6 +425,14 @@ export async function renameSession(
         };
       }
       await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
+      if (!matchesTitleVersion(g.sessionManager, expected)) {
+        return {
+          error: createHostError(
+            "STALE_REVISION",
+            "Conversation changed while generating the title; try again",
+          ),
+        };
+      }
       const snapshot = factory.setActiveSessionName(name);
       if (!snapshot) {
         return { error: createHostError("AGENT_NOT_READY", "No active session") };
@@ -406,6 +453,14 @@ export async function renameSession(
     }
     await factory.invalidateRetainedWorkspaceGraph(g.canonicalCwd);
     const sessionManager = SessionManager.open(target.path, undefined, g.canonicalCwd);
+    if (!matchesTitleVersion(sessionManager, expected)) {
+      return {
+        error: createHostError(
+          "STALE_REVISION",
+          "Conversation changed while generating the title; try again",
+        ),
+      };
+    }
     sessionManager.appendSessionInfo(name);
     return { sessionId, name: sessionManager.getSessionName() ?? name };
   });
@@ -462,63 +517,112 @@ export function setSessionRuntimeName(
   return snapshot;
 }
 
-export async function refineActiveSessionName(
+export async function generateSessionTitle(
   factory: WorkspaceGraphFactory,
-  args: {
-    session: AgentSession;
-    sessionId: string;
-    provisionalTitle: string;
-    userPrompt: string;
-  },
-): Promise<void> {
-  const initialGraph = factory.graph;
-  const initialRuntime = factory.findRuntimeForSession(args.session);
-  if (
-    !initialGraph ||
-    !initialRuntime ||
-    initialRuntime.identity.sessionId !== args.sessionId ||
-    args.session.sessionName !== args.provisionalTitle ||
-    !args.session.model
-  ) {
-    return;
-  }
-
-  factory.markTitleRefine(args.session, true);
-  let refinedTitle: string | undefined;
-  try {
-    refinedTitle = await generateRefinedSessionTitle({
-      model: args.session.model,
-      modelRegistry: factory.deps.modelRegistry,
-      userPrompt: args.userPrompt,
-      assistantText: extractLatestAssistantText(args.session.messages),
-    });
-  } catch (err) {
-    logger.warn("session title refinement failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  } finally {
-    factory.markTitleRefine(args.session, false);
-  }
-
+  requestId: string,
+  sessionId: string,
+  sessionPath: string,
+): Promise<{ sessionId: string; name: string; session?: SessionSnapshot } | { error: HostError }> {
+  const graph = factory.graph;
   const server = factory.server;
-  const currentGraph = factory.graph;
-  const currentRuntime = factory.findRuntimeForSession(args.session);
-  const canApplyRefinedTitle =
-    Boolean(refinedTitle) &&
-    Boolean(server) &&
-    currentGraph === initialGraph &&
-    Boolean(currentRuntime) &&
-    currentRuntime!.identity.sessionId === args.sessionId &&
-    args.session.sessionName === args.provisionalTitle &&
-    refinedTitle !== args.provisionalTitle &&
-    args.session.isIdle &&
-    !factory.getSessionOperationLock(args.session).isHeld() &&
-    !server!.serviceGraphLock.isHeld();
-  if (canApplyRefinedTitle && refinedTitle) {
-    setSessionRuntimeName(factory, args.session, refinedTitle);
+  if (!graph?.servicesReady || !server) {
+    return { error: createHostError("AGENT_NOT_READY", "Workspace services not ready") };
   }
-  if (currentGraph && currentRuntime?.background && args.session.isIdle) {
-    void factory.disposeSettledBackgroundRuntime(currentGraph, currentRuntime.background);
+  const workspaceRevision = server.getIdentity().workspaceRevision;
+  const key = `${graph.workspaceId}:${sessionId}`;
+  if (factory.pendingTitleRequests.has(key)) {
+    return {
+      error: createHostError(
+        "AGENT_BUSY",
+        "A title is already being generated for this conversation",
+      ),
+    };
+  }
+  factory.pendingTitleRequests.add(key);
+  try {
+    const read = await withStableGraphRead({
+      requestId,
+      identity: server.identity,
+      serviceGraphLock: server.serviceGraphLock,
+      precheck: () =>
+        factory.graph !== graph || server.getIdentity().workspaceRevision !== workspaceRevision
+          ? createHostError("STALE_REVISION", "Workspace changed before title generation")
+          : null,
+      run: async () => {
+        const target = (await listSessions(factory)).find(
+          (item) => item.id === sessionId && factory.sessionPathsEqual(item.path, sessionPath),
+        );
+        if (!target) return { error: createHostError("SESSION_NOT_FOUND", "Session not found") };
+        const active =
+          graph.sessionSnapshot?.sessionId === sessionId &&
+          factory.sessionPathsEqual(graph.sessionSnapshot.sessionPath, sessionPath);
+        if (
+          active
+            ? !graph.agentSession?.isIdle ||
+              factory.getSessionOperationLock(graph.agentSession).isHeld()
+            : factory.getSessionRuntimeInfo(sessionId, sessionPath)
+        ) {
+          return {
+            error: createHostError(
+              "AGENT_BUSY",
+              "Wait for the conversation to finish before generating a title",
+            ),
+          };
+        }
+        // Use the model selected in this workspace, without opening the target
+        // conversation or loading its extensions just to name it.
+        const model = graph.agentSession?.model;
+        if (!model || isPideckNoModel(model)) {
+          return {
+            error: createHostError("AGENT_NOT_READY", "Select a model before generating a title"),
+          };
+        }
+        const manager = active
+          ? graph.sessionManager
+          : SessionManager.open(target.path, undefined, graph.canonicalCwd);
+        if (!manager) return { error: createHostError("AGENT_NOT_READY", "Session is not ready") };
+        const messages = manager.buildSessionContext().messages;
+        const userPrompt = extractFirstUserText(messages);
+        if (!userPrompt)
+          return {
+            error: createHostError(
+              "INVALID_REQUEST",
+              "This conversation has no user text to summarize",
+            ),
+          };
+        return {
+          model,
+          userPrompt,
+          assistantText: extractLatestAssistantText(messages),
+          version: {
+            graph,
+            workspaceRevision,
+            name: manager.getSessionName(),
+            entryId: manager.getEntries().at(-1)?.id,
+            leafId: manager.getLeafId(),
+          } satisfies SessionTitleVersion,
+        };
+      },
+    });
+    if (!read.ok) return { error: read.error };
+    if (read.result.error) return { error: read.result.error };
+    const source = read.result;
+    // The network request owns no graph lock; navigation and ordinary chat
+    // remain available. Rename revalidates the workspace and conversation.
+    const name = await generateRefinedSessionTitle({
+      model: source.model,
+      modelRegistry: factory.deps.modelRegistry,
+      userPrompt: source.userPrompt,
+      assistantText: source.assistantText,
+      signal: server.getShutdownSignal(),
+    });
+    return await renameSession(factory, requestId, sessionId, sessionPath, name, source.version);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("session title generation failed", { sessionId, error: message });
+    return { error: createHostError("INTERNAL_ERROR", `Title generation failed: ${message}`) };
+  } finally {
+    factory.pendingTitleRequests.delete(key);
   }
 }
 

@@ -82,6 +82,27 @@ export function useExtensionUiResponse(
           { requestId, status, value },
         );
         if (!response.ok) {
+          const details = response.error?.details;
+          if (
+            response.error?.code === "STALE_REVISION" &&
+            details &&
+            typeof details === "object" &&
+            !Array.isArray(details) &&
+            details.requestId === requestId &&
+            details.requestClosed === true
+          ) {
+            if (clearIfCurrent(requestId, "stale")) {
+              const current = useAppStore.getState();
+              if (
+                request.groupKey &&
+                current.extensionDecisionGroups[request.groupKey]?.activeRequestId === null
+              ) {
+                current.closeExtensionDecisionGroup(request.groupKey, "stale");
+              }
+              pushNotification(t("extUiNoLongerActive"), "warning");
+            }
+            return false;
+          }
           const message = response.error?.message ?? t("extUiRespondFailed");
           if (useAppStore.getState().extensionUiRequest?.requestId === requestId) {
             setError(message);

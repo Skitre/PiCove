@@ -34,7 +34,7 @@ import {
   deleteSession,
   listSessions,
   openSession,
-  refineActiveSessionName,
+  generateSessionTitle,
   reloadSession,
   renameSession,
   restoreSession,
@@ -49,6 +49,8 @@ export class WorkspaceGraphFactory {
   /** @internal — session-lifecycle module */
   server: PiHostServer | null = null;
   readonly deps: GraphFactoryDeps;
+  /** @internal — deduplicates manual title requests without retaining agent runtimes. */
+  readonly pendingTitleRequests = new Set<string>();
   readonly userResourceCache: UserResourceCache;
   onModelHealthChanged?: () => void;
   private readonly sessionRuntimeCache: SessionRuntimeCache;
@@ -142,10 +144,6 @@ export class WorkspaceGraphFactory {
 
   wouldExceedLiveSessionLimit(): boolean {
     return this.sessionRuntimeCache.wouldExceedLiveSessionLimit();
-  }
-
-  markTitleRefine(session: AgentSession, pending: boolean): void {
-    this.sessionRuntimeCache.markTitleRefine(session, pending);
   }
 
   resolveSessionTarget(sessionId: unknown, sessionRevision: unknown): ResolvedSessionTarget | null {
@@ -307,13 +305,8 @@ export class WorkspaceGraphFactory {
     return setSessionRuntimeName(this, session, name);
   }
 
-  async refineActiveSessionName(args: {
-    session: AgentSession;
-    sessionId: string;
-    provisionalTitle: string;
-    userPrompt: string;
-  }) {
-    return refineActiveSessionName(this, args);
+  async generateSessionTitle(requestId: string, sessionId: string, sessionPath: string) {
+    return generateSessionTitle(this, requestId, sessionId, sessionPath);
   }
 
   /** @internal — session-lifecycle module */

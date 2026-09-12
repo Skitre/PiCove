@@ -6,6 +6,8 @@ import { useExtensionUiResponse } from "./use-extension-ui-response";
 
 const FOCUSABLE_SELECTOR =
   "button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
+const INITIAL_FOCUS_SELECTOR =
+  "button:not([disabled]):not([data-extension-ui-close]), textarea:not([disabled]), input:not([disabled]), select:not([disabled])";
 
 export function ExtensionUiModal() {
   const activeRequest = useAppStore((state) => state.extensionUiRequest);
@@ -22,7 +24,7 @@ export function ExtensionUiModal() {
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const timer = window.setTimeout(() => {
-      dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+      dialogRef.current?.querySelector<HTMLElement>(INITIAL_FOCUS_SELECTOR)?.focus();
     }, 0);
     return () => {
       window.clearTimeout(timer);
@@ -36,7 +38,7 @@ export function ExtensionUiModal() {
     if (controller.submitting) {
       dialog.focus();
     } else if (wasSubmittingRef.current && document.activeElement === dialog) {
-      dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+      dialog.querySelector<HTMLElement>(INITIAL_FOCUS_SELECTOR)?.focus();
     }
     wasSubmittingRef.current = controller.submitting;
   }, [controller.submitting]);
@@ -45,6 +47,7 @@ export function ExtensionUiModal() {
 
   function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
+      if (event.nativeEvent.isComposing) return;
       event.preventDefault();
       void controller.respond("cancelled");
       return;
@@ -81,6 +84,7 @@ export function ExtensionUiModal() {
         data-extension-ui-surface="modal"
       >
         <ExtensionUiRequestContent
+          key={request.requestId}
           request={request}
           controller={controller}
           titleId={titleId}

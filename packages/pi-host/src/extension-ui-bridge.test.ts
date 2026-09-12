@@ -894,6 +894,34 @@ describe("extension-ui-bridge", () => {
     ]);
   });
 
+  it("identifies an ended request after its close event was missed", async () => {
+    const events: Array<{ e: HostEventName; p: unknown }> = [];
+    const ui = createExtensionUiContext({
+      emit: (e, p) => events.push({ e, p }),
+      getIdentity: () => id,
+    });
+    const pendingInput = ui.input("Ended question", "");
+    const request = events.find((event) => event.e === "extensionUi.request")?.p as {
+      requestId: string;
+    };
+    cancelPendingForIdentity(id, "aborted");
+    await expect(pendingInput).resolves.toBeUndefined();
+
+    const { handlers } = extensionUiHandlers();
+    const response = await handlers["extensionUi.respond"]!({
+      id: "late-cancel",
+      context: targetContext(),
+      params: { requestId: request.requestId, status: "cancelled" },
+    } as never);
+
+    expect(response).toMatchObject({
+      error: {
+        code: "STALE_REVISION",
+        details: { requestId: request.requestId, requestClosed: true },
+      },
+    });
+  });
+
   it("accepts a background dialog only from its captured target identity", async () => {
     const events: Array<{ e: HostEventName; p: unknown }> = [];
     const ui = createExtensionUiContext({
@@ -917,6 +945,10 @@ describe("extension-ui-bridge", () => {
       params: { requestId: request.requestId, status: "resolved", value: "wrong" },
     } as never);
     expect("error" in rejected && rejected.error.code).toBe("STALE_REVISION");
+    expect("error" in rejected && rejected.error.details).toEqual({
+      requestId: request.requestId,
+      requestClosed: false,
+    });
     let settled = false;
     void pendingInput.then(() => {
       settled = true;

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -118,6 +118,22 @@ function renderRequestSurfaces() {
       <ExtensionUiModal />
     </>,
   );
+}
+
+function questionnaireRequest(
+  overrides: Partial<ExtensionUiRequestState> = {},
+): ExtensionUiRequestState {
+  return extensionRequest({
+    kind: "select",
+    title: "Choose a release lane",
+    options: [
+      { id: "alpha", label: "Alpha" },
+      { id: "beta", label: "Beta" },
+      { id: "other", label: "Type something…" },
+    ],
+    customInputOptionId: "other",
+    ...overrides,
+  });
 }
 
 describe("Extension presentation surfaces", () => {
@@ -496,6 +512,151 @@ describe("Extension presentation surfaces", () => {
     );
   });
 
+  describe.each(["inline", "modal"] as const)("%s questionnaire navigation", (presentation) => {
+    it("returns to options without answering another step or losing earlier answers", async () => {
+      const hostRequest = vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true } as never);
+      const groupKey = "tool:questionnaire-navigation";
+      useAppStore.setState({ session: sessionSnapshot() });
+      act(() =>
+        useAppStore
+          .getState()
+          .setExtensionUiRequest(questionnaireRequest({ presentation, groupKey })),
+      );
+      const user = userEvent.setup();
+      renderRequestSurfaces();
+      await user.click(screen.getByRole("button", { name: "Alpha" }));
+      const second = questionnaireRequest({ presentation, groupKey, title: "Choose the scope" });
+      act(() => useAppStore.getState().setExtensionUiRequest(second));
+
+      await user.click(screen.getByRole("button", { name: "Type something…" }));
+      await user.type(screen.getByRole("textbox", { name: "Your response" }), "A draft");
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Back to options" }));
+
+      expect(screen.getByRole("button", { name: "Type something…" })).toHaveFocus();
+      expect(hostRequest).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().extensionUiRequest?.requestId).toBe(second.requestId);
+      expect(useAppStore.getState().extensionDecisionGroups[groupKey]?.answeredCount).toBe(1);
+      await user.click(screen.getByRole("button", { name: "Beta" }));
+      expect(hostRequest).toHaveBeenLastCalledWith("extensionUi.respond", CONTEXT, {
+        requestId: second.requestId,
+        status: "resolved",
+        value: "beta",
+      });
+      expect(useAppStore.getState().extensionDecisionGroups[groupKey]?.answeredCount).toBe(2);
+    });
+
+    it("uses Escape to return, preserves the draft, and submits custom text once", async () => {
+      const hostRequest = vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true } as never);
+      const request = questionnaireRequest({ presentation });
+      act(() => useAppStore.getState().setExtensionUiRequest(request));
+      const user = userEvent.setup();
+      renderRequestSurfaces();
+
+      await user.click(screen.getByRole("button", { name: "Type something…" }));
+      const input = screen.getByRole("textbox", { name: "Your response" });
+      expect(input).toHaveFocus();
+      await user.type(input, "Keep audit logging");
+      fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+      expect(input).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+
+      expect(screen.getByRole("button", { name: "Type something…" })).toHaveFocus();
+      expect(hostRequest).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Type something…" }));
+      expect(screen.getByRole("textbox", { name: "Your response" })).toHaveValue(
+        "Keep audit logging",
+      );
+      await user.keyboard("{Enter}");
+      expect(hostRequest).toHaveBeenCalledOnce();
+      expect(hostRequest).toHaveBeenCalledWith("extensionUi.respond", CONTEXT, {
+        requestId: request.requestId,
+        status: "resolved",
+        value: { optionId: "other", input: "Keep audit logging" },
+      });
+    });
+
+    it("lets the header close button cancel the questionnaire from custom entry", async () => {
+      const hostRequest = vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true } as never);
+      const request = questionnaireRequest({ presentation });
+      act(() => useAppStore.getState().setExtensionUiRequest(request));
+      const user = userEvent.setup();
+      renderRequestSurfaces();
+
+      await user.click(screen.getByRole("button", { name: "Type something…" }));
+      await user.type(screen.getByRole("textbox", { name: "Your response" }), "Unsubmitted draft");
+      await user.click(screen.getByRole("button", { name: "Close" }));
+
+      expect(hostRequest).toHaveBeenCalledOnce();
+      expect(hostRequest).toHaveBeenCalledWith("extensionUi.respond", CONTEXT, {
+        requestId: request.requestId,
+        status: "cancelled",
+        value: undefined,
+      });
+      expect(useAppStore.getState().extensionUiRequest).toBeNull();
+    });
+
+    it("keeps custom input recoverable after failure and blocks navigation while submitting", async () => {
+      let resolveResponse: (value: unknown) => void = () => {};
+      const hostRequest = vi
+        .spyOn(hostClient, "request")
+        .mockResolvedValueOnce({ ok: false, error: { message: "Connection lost" } } as never)
+        .mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveResponse = resolve;
+            }) as never,
+        );
+      const request = questionnaireRequest({ presentation });
+      act(() => useAppStore.getState().setExtensionUiRequest(request));
+      const user = userEvent.setup();
+      renderRequestSurfaces();
+      await user.click(screen.getByRole("button", { name: "Type something…" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Your response" }),
+        "Retry this answer{Enter}",
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent("Connection lost");
+      expect(screen.getByRole("textbox", { name: "Your response" })).toHaveValue(
+        "Retry this answer",
+      );
+      await user.click(screen.getByRole("button", { name: "OK" }));
+
+      expect(screen.getByRole("button", { name: "Back to options" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+      await user.keyboard("{Escape}{Enter}");
+      expect(screen.getByRole("textbox", { name: "Your response" })).toBeInTheDocument();
+      expect(hostRequest).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        resolveResponse({ ok: true });
+      });
+      expect(useAppStore.getState().extensionUiRequest).toBeNull();
+    });
+  });
+
+  it("expires custom entry without carrying its draft into the next question", async () => {
+    vi.useFakeTimers();
+    const first = questionnaireRequest({ presentation: "inline", expiresAt: Date.now() + 100 });
+    const next = questionnaireRequest({ presentation: "modal", title: "Next question" });
+    act(() => {
+      useAppStore.getState().setExtensionUiRequest(first);
+      useAppStore.getState().setExtensionUiRequest(next);
+    });
+    renderRequestSurfaces();
+    fireEvent.click(screen.getByRole("button", { name: "Type something…" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your response" }), {
+      target: { value: "Expired draft" },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(101);
+    });
+
+    expect(screen.getByRole("dialog", { name: "Next question" })).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Type something…" }));
+    expect(screen.getByRole("textbox", { name: "Your response" })).toHaveValue("");
+  });
+
   it("traps modal focus and lets Escape cancel", async () => {
     vi.spyOn(hostClient, "request").mockResolvedValue({ ok: true, result: null } as never);
     act(() => {
@@ -505,6 +666,8 @@ describe("Extension presentation surfaces", () => {
     renderRequestSurfaces();
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
     await user.tab({ shift: true });
     expect(screen.getByRole("button", { name: "Confirm" })).toHaveFocus();
 

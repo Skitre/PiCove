@@ -41,6 +41,7 @@ export const HOST_METHODS = [
   "session.getSnapshot",
   "session.setName",
   "session.rename",
+  "session.generateTitle",
   "session.getEntries",
   "session.getTree",
   "session.getStats",
@@ -191,6 +192,7 @@ export type WorkspaceOnlyMethod =
   | "session.cleanupArchived"
   | "session.getSnapshot"
   | "session.rename"
+  | "session.generateTitle"
   | "session.usageReport"
   | "package.list"
   | "package.checkUpdates";
@@ -315,6 +317,7 @@ export const METHOD_CONTEXT_SCOPE: Record<HostMethod, MethodContextScope> = {
   "session.getSnapshot": "workspace",
   "session.setName": "activeSession",
   "session.rename": "workspace",
+  "session.generateTitle": "workspace",
   "session.getEntries": "activeSession",
   "session.getTree": "activeSession",
   "session.getStats": "activeSession",

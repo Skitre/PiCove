@@ -927,21 +927,24 @@ describe("deep result/event validation (C3)", () => {
     expect(invalidArchived.ok).toBe(false);
   });
 
-  it("validates session.rename results", () => {
-    expect(
-      validateSuccessResult("session.rename", {
-        sessionId: SESSION_ID,
-        name: "Renamed session",
-      }).ok,
-    ).toBe(true);
-    expect(
-      validateSuccessResult("session.rename", {
-        sessionId: SESSION_ID,
-        name: "Renamed session",
-        unexpected: true,
-      }).ok,
-    ).toBe(false);
-  });
+  it.each(["session.rename", "session.generateTitle"] as const)(
+    "validates %s results",
+    (method) => {
+      expect(
+        validateSuccessResult(method, {
+          sessionId: SESSION_ID,
+          name: "Renamed session",
+        }).ok,
+      ).toBe(true);
+      expect(
+        validateSuccessResult(method, {
+          sessionId: SESSION_ID,
+          name: "Renamed session",
+          unexpected: true,
+        }).ok,
+      ).toBe(false);
+    },
+  );
 
   it("parseHostResponse deep-fails wrong result shape", () => {
     const r = parseHostResponse({
@@ -1058,6 +1061,30 @@ describe("deep result/event validation (C3)", () => {
         groupKey: "x".repeat(257),
       }).ok,
     ).toBe(false);
+  });
+
+  it("only allows custom input on an existing select option", () => {
+    const request = {
+      requestId: EXTENSION_REQUEST_ID,
+      kind: "select",
+      options: [{ id: "other", label: "Type something…" }],
+      customInputOptionId: "other",
+    };
+    expect(validateEventPayload("extensionUi.request", request).ok).toBe(true);
+    for (const overrides of [
+      { kind: "input" },
+      { kind: "confirm" },
+      { options: undefined },
+      { options: [] },
+      { customInputOptionId: "missing" },
+      { customInputOptionId: "" },
+      { customInputOptionId: 1 },
+      { customInputOptionId: "x".repeat(MAX_EXTENSION_UI_OPTION_ID_LENGTH + 1) },
+    ]) {
+      expect(validateEventPayload("extensionUi.request", { ...request, ...overrides }).ok).toBe(
+        false,
+      );
+    }
   });
 
   it("enforces blocking Extension UI request bounds", () => {

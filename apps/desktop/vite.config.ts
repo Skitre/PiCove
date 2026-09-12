@@ -12,7 +12,9 @@ const pdfAssets = ["cmaps", "standard_fonts", "wasm"];
 
 export default defineConfig({
   plugins: [
-    react(),
+    // Re-evaluating the bootstrap creates a second React root with stale subscriptions.
+    // Updates that reach it must reload the page instead of applying Fast Refresh.
+    react({ exclude: /[\\/]src[\\/]main\.tsx$/ }),
     tailwindcss(),
     {
       name: "local-pdf-assets",

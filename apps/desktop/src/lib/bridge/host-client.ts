@@ -332,5 +332,10 @@ export class HostClient {
 
 export const hostClient = new HostClient();
 
+// The active transport and its subscribers must belong to the same client instance.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload());
+}
+
 // re-export for callers
 export type { HostEventName, HostStatusSnapshot };

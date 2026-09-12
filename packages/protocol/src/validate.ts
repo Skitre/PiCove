@@ -472,6 +472,7 @@ export function validateRequestParams<M extends HostMethod>(
     case "session.archive":
     case "session.restore":
     case "session.delete":
+    case "session.generateTitle":
       return exactObject(params, ["sessionId", "sessionPath"]) &&
         isUuid(params.sessionId) &&
         isNonEmptyString(params.sessionPath)

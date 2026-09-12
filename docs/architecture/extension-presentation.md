@@ -309,11 +309,23 @@ Compatibility is organized by behavior class rather than package popularity:
 | Layer                     | Evidence                                                                                                                                                                                                                                                                               |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Contract fixture          | Real SDK loader coverage for subagent dialog/widget/custom/activity, permission and repository guards, planning select/editor, 150-option selection, persistent widgets, registered message renderer snapshots, provider-only registration, background ownership, and shutdown cleanup |
-| Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` RPC/group/envelope path and `1.20.0` custom-terminal fallback, both locked with registry integrity hashes                                                                                                                           |
+| Pinned published packages | Exact `@juicesharp/rpiv-ask-user-question` `2.1.0` and `2.6.1` RPC/group/envelope paths and `1.20.0` custom-terminal fallback, locked with registry integrity hashes                                                                                                                    |
 | Scheduled latest audit    | Weekly/manual GitHub workflow replaces only the disposable v2 test alias with npm `latest`; it is separate from pull-request and `main` gates                                                                                                                                          |
 
 Core routing contains no representative package-name branch. The published packages
 are ecosystem evidence; the repository fixture remains the stable per-commit contract.
+
+The separate `extension-questionnaire-compat.ts` adapter covers the published rpiv
+`2.1.0` and `2.6.1` select-then-input flows. It checks the invocation's SDK source and package
+manifest, then marks the custom-answer option with `customInputOptionId`. Desktop
+keeps that select request pending while showing custom entry: **Back to options**
+and **Escape** return to the same choices and preserve the draft. Neither action
+answers another group step. The header **Close** button cancels the questionnaire.
+Submitting custom text sends `{ optionId, input }`; Host returns the original
+sentinel selection and supplies the text once to the same invocation's next input.
+The Extension still produces its original option/custom answer envelopes, including
+previews and partial answers on cancellation. Other package versions and ordinary
+SDK selects retain their existing behavior; no installed package is modified.
 
 ## Response lifecycle
 
@@ -322,6 +334,11 @@ are ecosystem evidence; the repository fixture remains the stable per-commit con
   `presentation`; missing presentation from a legacy Host still means Modal.
 - Controls disable while a response is in flight.
 - A failed response stays open, announces a local error, and can be retried.
+- If Host confirms an absent request with `STALE_REVISION` and error details
+  `{ requestId, requestClosed: true }`, Desktop removes that request and its idle
+  group shell, then shows a notification. A live request rejected for ownership
+  or input validation remains retryable; an ordinary stale-revision error alone
+  never dismisses it.
 - Expiry removes only the matching active request and advances the same-Session
   queue once.
 - A late response cannot dismiss a newer request because queue advancement is

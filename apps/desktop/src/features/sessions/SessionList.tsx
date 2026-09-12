@@ -7,6 +7,7 @@ import {
   Copy,
   FileOutput,
   FolderOpen,
+  LoaderCircle,
   MessageCircleQuestion,
   MoreHorizontal,
   Pencil,
@@ -14,6 +15,7 @@ import {
   PinOff,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -96,6 +98,9 @@ export function SessionList({
   const updateSessionCatalogInfo = useAppStore((s) => s.updateSessionCatalogInfo);
   const pushNotification = useAppStore((s) => s.pushNotification);
   const [sessionMutationPending, setSessionMutationPending] = useState(false);
+  const [pendingTitleKeys, setPendingTitleKeys] = useState(() => new Set<string>());
+  const pendingTitleRequests = useRef(new Set<string>());
+  const titleGenerationScope = `${host?.hostInstanceId}:${workspace?.id}:${workspace?.revision}`;
   const [sessionOpenPending, setSessionOpenPending] = useState(false);
   const [filter, setFilter] = useState<SessionFilter>("active");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -467,6 +472,8 @@ export function SessionList({
         pushNotification(res.error?.message ?? t("notifRenameFailed"), "error");
         return;
       }
+      // An older list response must not restore the previous name.
+      refreshRequest.current += 1;
       updateSessionCatalogInfo(res.result.sessionId, res.result.name);
       if (res.result.session) setSession(res.result.session);
       cancelRename();
@@ -487,6 +494,94 @@ export function SessionList({
       return next;
     });
     setMenuSessionId(null);
+  }
+
+  async function generateTitle(item: SessionCatalogEntry) {
+    if (!host || !workspace?.servicesReady || sessionMutationBlocked) return;
+    const generation = captureRequestGeneration(host);
+    const isCurrentWorkspace = () => {
+      const current = useAppStore.getState();
+      return (
+        mounted.current &&
+        isCurrentRequestGeneration(current.host, generation) &&
+        current.workspace?.id === workspace.id &&
+        current.workspace.revision === workspace.revision
+      );
+    };
+    const current = useAppStore.getState();
+    if (
+      !isCurrentWorkspace() ||
+      current.connecting ||
+      current.rehydrating ||
+      current.desynchronized ||
+      current.hostFatal ||
+      current.workspaceSwitchTarget
+    )
+      return;
+    const target = current.sessionCatalog.entries[item.sessionId];
+    if (
+      !target ||
+      target.sessionPath !== item.sessionPath ||
+      !target.messageCount ||
+      !canRenameSession(target, current.session)
+    )
+      return;
+    const key = `${titleGenerationScope}:${item.sessionId}`;
+    if (pendingTitleRequests.current.has(key)) return;
+    pendingTitleRequests.current.add(key);
+    setPendingTitleKeys(new Set(pendingTitleRequests.current));
+    setMenuSessionId(null);
+    setMenuPosition(null);
+    try {
+      const res = await hostClient.request(
+        "session.generateTitle",
+        workspaceContext(host, workspace),
+        {
+          sessionId: item.sessionId,
+          sessionPath: item.sessionPath,
+        },
+      );
+      if (!isCurrentWorkspace()) return;
+      if (!res.ok) {
+        pushNotification(
+          res.error.message
+            ? `${t("notifGenerateTitleFailed")}: ${res.error.message}`
+            : t("notifGenerateTitleFailed"),
+          "error",
+        );
+        return;
+      }
+      const latest = useAppStore.getState();
+      const latestItem = latest.sessionCatalog.entries[item.sessionId];
+      // A later rename or removal can reach the UI before this response.
+      if (
+        !latestItem ||
+        latestItem.sessionPath !== item.sessionPath ||
+        (latestItem.name !== target.name && latestItem.name !== res.result.name)
+      )
+        return;
+      refreshRequest.current += 1;
+      updateSessionCatalogInfo(res.result.sessionId, res.result.name);
+      if (
+        res.result.session &&
+        latest.session?.sessionId === res.result.session.sessionId &&
+        latest.session.revision === res.result.session.revision
+      ) {
+        // Only apply the name, preserving any messages that arrived meanwhile.
+        setSession({ ...latest.session, name: res.result.name });
+      }
+    } catch (error) {
+      if (!isCurrentWorkspace()) return;
+      pushNotification(
+        error instanceof Error
+          ? `${t("notifGenerateTitleFailed")}: ${error.message}`
+          : t("notifGenerateTitleFailed"),
+        "error",
+      );
+    } finally {
+      pendingTitleRequests.current.delete(key);
+      if (mounted.current) setPendingTitleKeys(new Set(pendingTitleRequests.current));
+    }
   }
 
   function removePinnedSessions(sessionIds: readonly string[]) {
@@ -834,6 +929,10 @@ export function SessionList({
               const menuOpen = menuSessionId === item.sessionId;
               const pinned = pinnedSessionIds.includes(item.sessionId);
               const canRename = canRenameSession(item, session);
+              const generatingTitle = pendingTitleKeys.has(
+                `${titleGenerationScope}:${item.sessionId}`,
+              );
+              const canGenerateTitle = canRename && Boolean(item.messageCount);
               const canDelete = canDeleteSession(item, session);
               const canReload = canReloadSession(item, session);
               const canArchive = canArchiveSession(item, session);
@@ -892,6 +991,19 @@ export function SessionList({
                           icon: Pencil,
                           disabled: !canRename,
                           onSelect: () => beginRename(item),
+                        },
+                        {
+                          id: "session.generateTitle",
+                          label: t(
+                            generatingTitle ? "sessionsGeneratingTitle" : "sessionsGenerateTitle",
+                          ),
+                          icon: generatingTitle ? LoaderCircle : Sparkles,
+                          disabled:
+                            !canGenerateTitle ||
+                            generatingTitle ||
+                            sessionMutationBlocked ||
+                            !workspace?.servicesReady,
+                          onSelect: () => generateTitle(item),
                         },
                         {
                           id: "session.pin",
@@ -1039,6 +1151,16 @@ export function SessionList({
                           >
                             {sessionDisplayName(item, t("sessionsUntitled"))}
                           </span>
+                          {generatingTitle && (
+                            <span
+                              role="status"
+                              aria-label={t("sessionsGeneratingTitle")}
+                              title={t("sessionsGeneratingTitle")}
+                              className="shrink-0 text-muted"
+                            >
+                              <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                            </span>
+                          )}
                           {pinned && (
                             <Pin
                               size={10}
@@ -1095,8 +1217,8 @@ export function SessionList({
                               return;
                             }
                             const rect = event.currentTarget.getBoundingClientRect();
-                            const menuWidth = 144;
-                            const menuHeight = 166;
+                            const menuWidth = 176;
+                            const menuHeight = 194;
                             const viewportPadding = 8;
                             const below = rect.bottom + 4;
                             setMenuPosition({
@@ -1127,7 +1249,7 @@ export function SessionList({
                           menuPosition &&
                           createPortal(
                             <div
-                              className="theme-floating-surface fixed z-50 w-36 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+                              className="theme-floating-surface fixed z-50 w-44 rounded-md border border-border bg-surface-raised p-1 shadow-lg"
                               style={menuPosition}
                               data-session-menu
                             >
@@ -1142,6 +1264,35 @@ export function SessionList({
                               >
                                 <Pencil size={13} />
                                 {t("sessionsRename")}
+                              </button>
+                              <button
+                                type="button"
+                                title={
+                                  !item.messageCount
+                                    ? t("sessionsGenerateTitleEmpty")
+                                    : !canRename
+                                      ? t("sessionsGenerateTitleWait")
+                                      : t("sessionsGenerateTitleHint")
+                                }
+                                disabled={
+                                  !canGenerateTitle ||
+                                  generatingTitle ||
+                                  sessionMutationBlocked ||
+                                  !workspace?.servicesReady
+                                }
+                                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={() => void generateTitle(item)}
+                              >
+                                {generatingTitle ? (
+                                  <LoaderCircle size={13} className="animate-spin" />
+                                ) : (
+                                  <Sparkles size={13} />
+                                )}
+                                {t(
+                                  generatingTitle
+                                    ? "sessionsGeneratingTitle"
+                                    : "sessionsGenerateTitle",
+                                )}
                               </button>
                               <button
                                 type="button"

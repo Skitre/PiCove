@@ -8,6 +8,7 @@ import type {
 } from "@earendil-works/pi-ai/compat";
 import {
   createProvisionalSessionTitle,
+  extractFirstUserText,
   extractLatestAssistantText,
   generateRefinedSessionTitle,
   sanitizeSessionTitle,
@@ -43,20 +44,40 @@ describe("session titles", () => {
     ).toBe("first\nsecond");
   });
 
+  it("extracts the first visible user text without attachment metadata or image data", () => {
+    const attachments = '<pideck-attachments version="1">[]</pideck-attachments>';
+    expect(
+      extractFirstUserText([
+        null,
+        { role: "assistant", content: "ignored" },
+        { role: "user", content: attachments },
+        {
+          role: "user",
+          content: [
+            { type: "image", data: "ignored" },
+            { type: "text", text: `Summarize this document\n${attachments}` },
+          ],
+        },
+        { role: "user", content: "later task" },
+      ]),
+    ).toBe("Summarize this document");
+    expect(extractFirstUserText([{ role: "user", content: "Plain text" }])).toBe("Plain text");
+    expect(
+      extractFirstUserText([{ role: "user", content: [{ type: "image", data: "ignored" }] }]),
+    ).toBe("");
+  });
+
   it("uses a separate minimal completion and sanitizes its result", async () => {
     const complete = vi.fn(
-      async (
-        _model: Model<Api>,
-        _context: Context,
-        _options?: SimpleStreamOptions,
-      ) =>
+      async (_model: Model<Api>, _context: Context, _options?: SimpleStreamOptions) =>
         ({
-        role: "assistant",
-        content: [{ type: "text", text: "Title: Restore desktop sessions." }],
-        stopReason: "stop",
+          role: "assistant",
+          content: [{ type: "text", text: "Title: Restore desktop sessions." }],
+          stopReason: "stop",
         }) as AssistantMessage,
     );
     const model = { provider: "test", id: "title", api: "test" } as Model<Api>;
+    const signal = new AbortController().signal;
     const title = await generateRefinedSessionTitle({
       model,
       modelRegistry: {
@@ -64,6 +85,7 @@ describe("session titles", () => {
       },
       userPrompt: "Restore desktop sessions",
       assistantText: "Implemented session restoration.",
+      signal,
       complete,
     });
 
@@ -75,6 +97,59 @@ describe("session titles", () => {
       maxRetries: 0,
       reasoning: "minimal",
       timeoutMs: 15_000,
+      signal,
     });
   });
+
+  it.each(["", "   ", "Title:"])(
+    "rejects empty model output %j instead of using a fallback",
+    async (text) => {
+      await expect(
+        generateRefinedSessionTitle({
+          model: { provider: "test", id: "title", api: "test" } as Model<Api>,
+          modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }) },
+          userPrompt: "Original request",
+          assistantText: "Reply",
+          complete: async () =>
+            ({
+              role: "assistant",
+              content: [{ type: "text", text }],
+              stopReason: "stop",
+            }) as AssistantMessage,
+        }),
+      ).rejects.toThrow("The model did not return a title");
+    },
+  );
+
+  it("reports credential failure before attempting a completion", async () => {
+    const complete = vi.fn();
+    await expect(
+      generateRefinedSessionTitle({
+        model: { provider: "test", id: "title", api: "test" } as Model<Api>,
+        modelRegistry: {
+          getApiKeyAndHeaders: async () => ({ ok: false, error: "No credentials" }),
+        },
+        userPrompt: "Original request",
+        assistantText: "",
+        complete,
+      }),
+    ).rejects.toThrow("No credentials");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it.each(["error", "aborted"] as const)(
+    "rejects a completion that stopped with %s",
+    async (stopReason) => {
+      await expect(
+        generateRefinedSessionTitle({
+          model: { provider: "test", id: "title", api: "test" } as Model<Api>,
+          modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true }) },
+          userPrompt: "Original request",
+          assistantText: "",
+          complete: async () =>
+            ({ role: "assistant", content: [], stopReason }) as unknown as AssistantMessage,
+        }),
+      ).rejects.toThrow(`Title generation ${stopReason}`);
+    },
+  );
 });

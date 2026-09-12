@@ -7,6 +7,7 @@ import {
   type ProviderHeaders,
   type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
+import { stripAttachmentReferenceBlocks } from "@pideck/protocol";
 
 const DEFAULT_SESSION_TITLE = "新会话";
 const MAX_SESSION_TITLE_LENGTH = 28;
@@ -82,11 +83,32 @@ export function extractLatestAssistantText(messages: readonly unknown[]): string
   return "";
 }
 
+export function extractFirstUserText(messages: readonly unknown[]): string {
+  for (const value of messages) {
+    const message = value as { role?: unknown; content?: unknown };
+    if (message?.role !== "user") continue;
+    const text =
+      typeof message.content === "string"
+        ? message.content
+        : Array.isArray(message.content)
+          ? message.content
+              .flatMap((part) =>
+                part?.type === "text" && typeof part.text === "string" ? [part.text] : [],
+              )
+              .join("\n")
+          : "";
+    const visible = stripAttachmentReferenceBlocks(text).trim();
+    if (visible) return visible;
+  }
+  return "";
+}
+
 export async function generateRefinedSessionTitle(args: {
   model: Model<Api>;
   modelRegistry: TitleModelRegistry;
   userPrompt: string;
   assistantText: string;
+  signal?: AbortSignal;
   complete?: CompleteTitle;
 }): Promise<string> {
   const auth = await args.modelRegistry.getApiKeyAndHeaders(args.model);
@@ -121,6 +143,7 @@ export async function generateRefinedSessionTitle(args: {
     reasoning: "minimal",
     timeoutMs: 15_000,
     maxRetries: 0,
+    signal: args.signal,
   });
   if (response.stopReason === "error" || response.stopReason === "aborted") {
     throw new Error(response.errorMessage ?? `Title generation ${response.stopReason}`);
@@ -129,5 +152,7 @@ export async function generateRefinedSessionTitle(args: {
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
     .map((part) => part.text)
     .join("\n");
-  return sanitizeSessionTitle(text, createProvisionalSessionTitle(args.userPrompt));
+  const title = sanitizeSessionTitle(text, "");
+  if (!title) throw new Error("The model did not return a title");
+  return title;
 }

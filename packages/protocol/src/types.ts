@@ -867,6 +867,8 @@ export type ExtensionUiRequest = {
   routeReason?: ExtensionUiRouteReason;
   groupKey?: string;
   allowFreeform?: boolean;
+  /** This select option opens local text entry; submit { optionId, input }. */
+  customInputOptionId?: string;
   origin?: ExtensionUiOrigin;
 };
 

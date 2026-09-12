@@ -1270,6 +1270,7 @@ function isExtensionUiRequest(value: unknown): boolean {
         "routeReason",
         "groupKey",
         "allowFreeform",
+        "customInputOptionId",
         "origin",
       ],
     ) &&
@@ -1292,6 +1293,11 @@ function isExtensionUiRequest(value: unknown): boolean {
       (EXTENSION_UI_ROUTE_REASONS as readonly string[]).includes(String(value.routeReason))) &&
     (value.groupKey === undefined || isBoundedNonEmptyString(value.groupKey, 256)) &&
     (value.allowFreeform === undefined || isBoolean(value.allowFreeform)) &&
+    (value.customInputOptionId === undefined ||
+      (value.kind === "select" &&
+        isBoundedNonEmptyString(value.customInputOptionId, MAX_EXTENSION_UI_OPTION_ID_LENGTH) &&
+        Array.isArray(value.options) &&
+        value.options.some((option) => option.id === value.customInputOptionId))) &&
     (value.origin === undefined || isExtensionUiOrigin(value.origin))
   );
 }
@@ -1661,13 +1667,14 @@ export function validateMethodResultShape(method: HostMethod, result: unknown): 
     case "model.setThinkingLevel":
       return isSessionSnapshot(result) ? null : `${method} must return SessionSnapshot`;
     case "session.rename":
+    case "session.generateTitle":
       return isPlainObject(result) &&
         hasExactKeys(result, ["sessionId", "name"], ["session"]) &&
         isUuid(result.sessionId) &&
         isString(result.name) &&
         (result.session === undefined || isSessionSnapshot(result.session))
         ? null
-        : "invalid session.rename result";
+        : `invalid ${method} result`;
     case "session.getSnapshot":
       return result === null || isSessionSnapshot(result) ? null : "invalid session snapshot";
     case "session.getEntries":

@@ -19,6 +19,7 @@ export type ExtensionInvocationContext = {
   readonly session: AgentSession;
   readonly invocationId: string;
   readonly origin: ExtensionUiOrigin;
+  readonly sourceInfo?: SourceInfo;
   readonly signal?: AbortSignal;
   readonly runId?: string;
   readonly invocation?: string;
@@ -244,6 +245,7 @@ export function createExtensionInvocationRunner(session: AgentSession): Extensio
         session,
         invocationId: randomUUID(),
         origin: originFromMetadata(metadata),
+        sourceInfo: metadata.sourceInfo,
         ...(metadata.kind === "tool" && metadata.signal ? { signal: metadata.signal } : {}),
         active: true,
         widgetAttentionRequested: false,

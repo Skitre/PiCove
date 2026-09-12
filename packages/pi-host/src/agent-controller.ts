@@ -163,7 +163,6 @@ function startDetachedPrompt(args: {
       args.session.sessionName?.trim() || !visibleText.trim()
         ? null
         : createProvisionalSessionTitle(visibleText);
-    const titleSessionId = runIdentity.sessionId;
     const extensionCommandInvocation = resolveExtensionCommandInvocation(args.session, args.text);
 
     runStatePublished = true;
@@ -172,7 +171,6 @@ function startDetachedPrompt(args: {
     if (provisionalTitle) args.factory.setSessionRuntimeName(args.session, provisionalTitle);
 
     void (async () => {
-      let completed = false;
       try {
         const runPrompt = () =>
           args.session.prompt(args.text, {
@@ -189,7 +187,6 @@ function startDetachedPrompt(args: {
         } else {
           await runPrompt();
         }
-        completed = true;
       } catch (err) {
         const identity = args.factory.findRuntimeForSession(args.session)?.identity ?? runIdentity;
         const message = err instanceof Error ? err.message : String(err);
@@ -211,14 +208,6 @@ function startDetachedPrompt(args: {
         }
       } finally {
         cleanup();
-      }
-      if (completed && provisionalTitle && titleSessionId) {
-        await args.factory.refineActiveSessionName({
-          session: args.session,
-          sessionId: titleSessionId,
-          provisionalTitle,
-          userPrompt: args.text,
-        });
       }
     })().catch((err: unknown) => {
       logger.error("Detached agent prompt task failed", {

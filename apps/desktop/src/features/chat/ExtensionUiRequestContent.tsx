@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
+  ArrowLeft,
   Check,
   CircleAlert,
   LoaderCircle,
@@ -97,6 +98,11 @@ export function ExtensionUiRequestContent({
   const optionSearchId = useId();
   const { input, setInput, submitting, error, respond } = controller;
   const [optionQuery, setOptionQuery] = useState("");
+  const [customInputOpen, setCustomInputOpen] = useState(false);
+  const customInput = request.kind === "select" && !!request.customInputOptionId && customInputOpen;
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const customOptionRef = useRef<HTMLButtonElement>(null);
+  const restoreOptionFocusRef = useRef(false);
   const optionScrollRef = useRef<HTMLDivElement>(null);
   const [selectSubmitSource, setSelectSubmitSource] = useState<
     { kind: "option"; id: string } | { kind: "freeform" } | null
@@ -140,6 +146,34 @@ export function ExtensionUiRequestContent({
     if (optionScrollRef.current) optionScrollRef.current.scrollTop = 0;
   }, [optionQuery]);
 
+  useEffect(() => {
+    if (customInput) inputRef.current?.focus();
+    else if (restoreOptionFocusRef.current) {
+      restoreOptionFocusRef.current = false;
+      customOptionRef.current?.focus();
+    }
+  }, [customInput]);
+
+  function returnToOptions() {
+    if (submitting) return;
+    restoreOptionFocusRef.current = true;
+    setCustomInputOpen(false);
+  }
+
+  function submitInput() {
+    void respond(
+      "resolved",
+      customInput ? { optionId: request.customInputOptionId!, input } : input,
+    );
+  }
+
+  function handleContentKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape" || !customInput || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    returnToOptions();
+  }
+
   async function respondToSelect(source: NonNullable<typeof selectSubmitSource>, value: string) {
     setSelectSubmitSource(source);
     if (!(await respond("resolved", value))) setSelectSubmitSource(null);
@@ -148,12 +182,12 @@ export function ExtensionUiRequestContent({
   function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.nativeEvent.isComposing || submitting) return;
     const shouldSubmit =
-      request.kind === "input"
+      request.kind === "input" || customInput
         ? event.key === "Enter" && !event.shiftKey
         : event.key === "Enter" && (event.metaKey || event.ctrlKey);
     if (!shouldSubmit) return;
     event.preventDefault();
-    void respond("resolved", input);
+    submitInput();
   }
 
   function renderOption(option: (typeof options)[number], index: number) {
@@ -161,6 +195,7 @@ export function ExtensionUiRequestContent({
       submitting && selectSubmitSource?.kind === "option" && selectSubmitSource.id === option.id;
     return (
       <button
+        ref={option.id === request.customInputOptionId ? customOptionRef : undefined}
         type="button"
         aria-label={option.description ? `${option.label}. ${option.description}` : option.label}
         aria-posinset={virtualizeOptions ? index + 1 : undefined}
@@ -174,7 +209,10 @@ export function ExtensionUiRequestContent({
               ? "border-danger/30 text-danger hover:bg-danger/10 disabled:opacity-45"
               : "border-border text-foreground/90 hover:bg-surface-overlay disabled:opacity-45"
         }`}
-        onClick={() => void respondToSelect({ kind: "option", id: option.id }, option.id)}
+        onClick={() => {
+          if (option.id === request.customInputOptionId) setCustomInputOpen(true);
+          else void respondToSelect({ kind: "option", id: option.id }, option.id);
+        }}
       >
         <span className="text-xs font-medium">{option.label}</span>
         {option.description && (
@@ -202,8 +240,20 @@ export function ExtensionUiRequestContent({
     </button>
   );
 
+  const backButton = (
+    <button
+      type="button"
+      disabled={submitting}
+      className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-border px-3 text-xs text-foreground/80 transition-colors hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-45"
+      onClick={returnToOptions}
+    >
+      <ArrowLeft size={13} aria-hidden="true" />
+      <span>{t("extUiReturnToOptions")}</span>
+    </button>
+  );
+
   return (
-    <div className="min-w-0" aria-busy={submitting}>
+    <div className="min-w-0" aria-busy={submitting} onKeyDown={handleContentKeyDown}>
       <div className="flex min-w-0 items-start gap-2.5">
         {highRisk ? (
           <CircleAlert size={17} className="mt-0.5 shrink-0 text-warning" />
@@ -240,6 +290,17 @@ export function ExtensionUiRequestContent({
             </p>
           )}
         </div>
+        <button
+          type="button"
+          title={t("commonClose")}
+          aria-label={t("commonClose")}
+          data-extension-ui-close="true"
+          disabled={submitting}
+          className="-mr-1 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-overlay hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          onClick={() => void respond("cancelled")}
+        >
+          <X size={15} aria-hidden="true" />
+        </button>
       </div>
 
       {error && (
@@ -271,7 +332,7 @@ export function ExtensionUiRequestContent({
         </div>
       )}
 
-      {request.kind === "select" && (
+      {request.kind === "select" && !customInput && (
         <div className="mt-3">
           <fieldset disabled={submitting}>
             <legend className="mb-1.5 text-xs font-medium text-foreground/80">
@@ -402,12 +463,13 @@ export function ExtensionUiRequestContent({
         </div>
       )}
 
-      {(request.kind === "input" || request.kind === "editor") && (
+      {(request.kind === "input" || request.kind === "editor" || customInput) && (
         <div className="mt-3">
           <label htmlFor={fieldId} className="mb-1.5 block text-xs font-medium text-foreground/80">
             {t("extUiResponseLabel")}
           </label>
           <textarea
+            ref={inputRef}
             id={fieldId}
             rows={request.kind === "editor" ? 7 : 2}
             value={input}
@@ -421,12 +483,12 @@ export function ExtensionUiRequestContent({
             onKeyDown={handleInputKeyDown}
           />
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {cancelButton}
+            {customInput ? backButton : cancelButton}
             <button
               type="button"
               disabled={submitting}
               className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md bg-accent px-3 text-xs text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45"
-              onClick={() => void respond("resolved", input)}
+              onClick={submitInput}
             >
               <SubmitLabel label={t("extUiOk")} submitting={submitting} />
             </button>

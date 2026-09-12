@@ -225,6 +225,19 @@ export function createSessionHandlers(
       return { result };
     },
 
+    "session.generateTitle": async (ctx) => {
+      const stale = factory.checkIdentity(ctx.context, { requireWorkspace: true });
+      if (stale) return { error: stale };
+      const params = ctx.params as { sessionId: string; sessionPath: string };
+      const result = await factory.generateSessionTitle(
+        ctx.id,
+        params.sessionId,
+        params.sessionPath,
+      );
+      if ("error" in result) return { error: result.error };
+      return { result };
+    },
+
     "session.getEntries": async (ctx) => {
       const server = factory.getServer();
       if (!server) {

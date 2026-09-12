@@ -189,7 +189,6 @@ function stableHandlerFixture(wait: Promise<void>) {
     clearSessionRunId: vi.fn(),
     setActiveSessionName: vi.fn(),
     setSessionRuntimeName: vi.fn(),
-    refineActiveSessionName: vi.fn(async () => {}),
     resolveSessionTarget: () => ({
       identity: identity.snapshot(),
       agentSession: session,

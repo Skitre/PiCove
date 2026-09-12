@@ -200,7 +200,7 @@ function mockFactory(opts: {
         return snapshot;
       },
     ),
-    refineActiveSessionName: vi.fn(async () => {}),
+    generateSessionTitle: vi.fn(async () => {}),
     deps: {
       agentDir: "C:\\nonexistent\\pi-agent",
       packageUpdateCheck: false,
@@ -381,7 +381,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     }
   });
 
-  it("provisionally names an unnamed session and schedules refinement", async () => {
+  it("names an unnamed session locally without requesting an AI title", async () => {
     const factory = mockFactory({ resourceReloadRequired: false });
     const graph = factory.getGraph()!;
     (graph.agentSession as unknown as { sessionName?: string }).sessionName = undefined;
@@ -396,24 +396,17 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
       graph.agentSession,
       "修复 session 恢复问题",
     );
-    await vi.waitFor(() => {
-      expect(factory.refineActiveSessionName).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId: "s1",
-          provisionalTitle: "修复 session 恢复问题",
-          userPrompt: "修复 session 恢复问题。然后补测试",
-        }),
-      );
-    });
+    await vi.waitFor(() => expect(factory.getServer()!.getPhase()).toBe("ready"));
+    expect(factory.generateSessionTitle).not.toHaveBeenCalled();
   });
 
   it("catches failures from the detached prompt task", async () => {
     const factory = mockFactory({ resourceReloadRequired: false });
     const graph = factory.getGraph()!;
     (graph.agentSession as unknown as { sessionName?: string }).sessionName = undefined;
-    vi.mocked(factory.refineActiveSessionName).mockRejectedValueOnce(
-      new Error("refinement escaped"),
-    );
+    vi.spyOn(factory, "clearSessionRunId").mockImplementationOnce(() => {
+      throw new Error("cleanup failed");
+    });
     const logError = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const out = await createAgentHandlers(factory)["agent.prompt"]!({
@@ -425,7 +418,7 @@ describe("RESOURCE_RELOAD_FAILED prompt block", () => {
     await vi.waitFor(() => {
       expect(logError).toHaveBeenCalledWith(
         "Detached agent prompt task failed",
-        expect.objectContaining({ error: "refinement escaped" }),
+        expect.objectContaining({ error: "cleanup failed" }),
       );
     });
   });

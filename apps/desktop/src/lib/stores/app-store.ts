@@ -1240,3 +1240,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 }));
+
+// A replacement store cannot update the references captured by existing hooks.
+// Reload all consumers together when this singleton or its dependencies change.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload());
+}

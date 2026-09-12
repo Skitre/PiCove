@@ -166,7 +166,6 @@ export class SessionRuntimeCache {
   private readonly sessionOperationLocks = new WeakMap<AgentSession, AgentOperationLock>();
   private readonly runIds = new WeakMap<AgentSession, string>();
   private readonly disposedSessions = new WeakSet<AgentSession>();
-  private readonly titleRefineSessions = new WeakSet<AgentSession>();
 
   constructor(private readonly context: SessionRuntimeCacheContext) {}
 
@@ -238,11 +237,6 @@ export class SessionRuntimeCache {
     if (!graph) return false;
     const currentIsBusy = graph.agentSession ? this.isSessionBusy(graph.agentSession) : false;
     return wouldExceedLiveSessionLimit(graph, currentIsBusy);
-  }
-
-  markTitleRefine(session: AgentSession, pending: boolean): void {
-    if (pending) this.titleRefineSessions.add(session);
-    else this.titleRefineSessions.delete(session);
   }
 
   resolveSessionTarget(sessionId: unknown, sessionRevision: unknown): ResolvedSessionTarget | null {
@@ -769,7 +763,6 @@ export class SessionRuntimeCache {
   ): Promise<void> {
     const server = this.context.getServer();
     if (!server) return;
-    if (this.titleRefineSessions.has(runtime.agentSession)) return;
     if (this.isSessionBusy(runtime.agentSession)) return;
     this.publishRuntimeState(
       runtime.agentSession,
@@ -782,7 +775,6 @@ export class SessionRuntimeCache {
       requestId,
     });
     try {
-      if (this.titleRefineSessions.has(runtime.agentSession)) return;
       if (this.isSessionBusy(runtime.agentSession)) return;
       await this.disposeBackgroundRuntime(graph, runtime);
     } finally {

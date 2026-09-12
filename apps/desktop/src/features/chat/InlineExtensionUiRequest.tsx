@@ -11,9 +11,7 @@ export function InlineExtensionUiRequest() {
   const request = activeRequest?.presentation === "inline" ? activeRequest : null;
   const decisionGroups = useAppStore((state) => state.extensionDecisionGroups);
   const sessionId = useAppStore((state) => state.session?.sessionId ?? null);
-  const requestGroup = request?.groupKey
-    ? decisionGroups[request.groupKey]
-    : undefined;
+  const requestGroup = request?.groupKey ? decisionGroups[request.groupKey] : undefined;
   const waitingGroup = activeRequest
     ? undefined
     : Object.values(decisionGroups)
@@ -40,9 +38,7 @@ export function InlineExtensionUiRequest() {
     >
       <div
         className={`conversation-content-width mx-auto max-h-[min(32rem,50dvh)] w-full overflow-y-auto overscroll-contain rounded-md border bg-surface-raised px-3.5 py-3 shadow-sm ${
-          (request?.risk ?? group?.risk) === "high"
-            ? "border-warning/40"
-            : "border-border"
+          (request?.risk ?? group?.risk) === "high" ? "border-warning/40" : "border-border"
         }`}
         data-extension-ui-group={group?.groupKey}
       >
@@ -54,6 +50,7 @@ export function InlineExtensionUiRequest() {
         ) : null}
         {request ? (
           <ExtensionUiRequestContent
+            key={request.requestId}
             request={request}
             controller={controller}
             titleId={titleId}

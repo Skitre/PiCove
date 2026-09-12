@@ -17,18 +17,12 @@ import {
   type ExtensionUiBinding,
 } from "./extension-ui-bridge.js";
 import { createTestModelServices } from "./test-helpers/model-runtime.js";
-import {
-  createTempAgentLayout,
-  type TempAgentLayout,
-} from "./test-helpers/temp-agent.js";
+import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 
 const require = createRequire(import.meta.url);
-const RPIV_V1_ENTRYPOINT = require.resolve(
-  "@pideck-test/rpiv-ask-user-question-v1",
-);
-const RPIV_V2_ENTRYPOINT = require.resolve(
-  "@pideck-test/rpiv-ask-user-question-v2",
-);
+const RPIV_V1_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v1");
+const RPIV_V2_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v2");
+const RPIV_V2_6_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v2-6");
 
 type EmittedEvent = { event: HostEventName; payload: unknown };
 
@@ -47,6 +41,7 @@ type DecisionPayload = {
   presentation: string;
   routeReason: string;
   groupKey?: string;
+  customInputOptionId?: string;
 };
 
 type LoadedExtension = {
@@ -82,11 +77,9 @@ async function loadPublishedExtension(
   eventBus.on("rpiv:ask-user:prompt", (payload) => promptEvents.push(payload));
   eventBus.on("rpiv:ask-user:blocked", (payload) => blockedEvents.push(payload));
 
-  const settingsManager = SettingsManager.create(
-    layout.projectDir,
-    layout.agentDir,
-    { projectTrusted: true },
-  );
+  const settingsManager = SettingsManager.create(layout.projectDir, layout.agentDir, {
+    projectTrusted: true,
+  });
   const { modelRuntime } = await createTestModelServices(layout.agentDir);
   const resourceLoader = new DefaultResourceLoader({
     cwd: layout.projectDir,
@@ -183,17 +176,15 @@ afterEach(() => {
   cancelAllPending("real extension compatibility cleanup");
 });
 
-describe("pinned published Extension compatibility", () => {
+describe.each([
+  ["2.1.0", RPIV_V2_ENTRYPOINT],
+  ["2.6.1", RPIV_V2_6_ENTRYPOINT],
+])("pinned rpiv %s RPC compatibility", (_version, entrypoint) => {
   it("runs the pinned rpiv v2 package through native RPC decisions", async () => {
-    const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2");
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2");
     try {
       const tool = registeredAskUserTool(loaded.session);
-      const running = tool.execute(
-        "tool-call-rpiv-v2",
-        QUESTIONNAIRE,
-        undefined,
-        undefined,
-      );
+      const running = tool.execute("tool-call-rpiv-v2", QUESTIONNAIRE, undefined, undefined);
 
       const first = await waitForEvent<DecisionPayload>(
         loaded.events,
@@ -220,17 +211,10 @@ describe("pinned published Extension compatibility", () => {
           ]),
         }),
       ]);
-      const shipNowOption = first.options?.find((option) =>
-        option.label.includes("Ship now"),
-      );
+      const shipNowOption = first.options?.find((option) => option.label.includes("Ship now"));
       expect(shipNowOption).toBeDefined();
       expect(
-        respondExtensionUi(
-          first.requestId,
-          "resolved",
-          shipNowOption!.id,
-          loaded.identity,
-        ),
+        respondExtensionUi(first.requestId, "resolved", shipNowOption!.id, loaded.identity),
       ).toBe(true);
 
       const second = await waitForEvent<DecisionPayload>(
@@ -254,12 +238,7 @@ describe("pinned published Extension compatibility", () => {
       );
       expect(third.groupKey).toBe(first.groupKey);
       expect(
-        respondExtensionUi(
-          third.requestId,
-          "resolved",
-          "Add audit logging",
-          loaded.identity,
-        ),
+        respondExtensionUi(third.requestId, "resolved", "Add audit logging", loaded.identity),
       ).toBe(true);
 
       await expect(running).resolves.toMatchObject({
@@ -278,24 +257,22 @@ describe("pinned published Extension compatibility", () => {
         },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(
-        loaded.events.filter((event) => event.event === "extensionUi.groupClosed"),
-      ).toEqual([
+      expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
         {
           event: "extensionUi.groupClosed",
           payload: { groupKey: first.groupKey, status: "completed" },
         },
       ]);
-      expect(
-        loaded.events.some((event) => event.event === "extensionUi.customStarted"),
-      ).toBe(false);
+      expect(loaded.events.some((event) => event.event === "extensionUi.customStarted")).toBe(
+        false,
+      );
     } finally {
       loaded.cleanup();
     }
   }, 30_000);
 
   it("preserves partial structured answers when the pinned rpiv v2 questionnaire is cancelled", async () => {
-    const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2-cancel");
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-cancel");
     try {
       const running = registeredAskUserTool(loaded.session).execute(
         "tool-call-rpiv-v2-cancel",
@@ -308,17 +285,10 @@ describe("pinned published Extension compatibility", () => {
         "extensionUi.request",
         (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-cancel",
       );
-      const shipNowOption = first.options?.find((option) =>
-        option.label.includes("Ship now"),
-      );
+      const shipNowOption = first.options?.find((option) => option.label.includes("Ship now"));
       expect(shipNowOption).toBeDefined();
       expect(
-        respondExtensionUi(
-          first.requestId,
-          "resolved",
-          shipNowOption!.id,
-          loaded.identity,
-        ),
+        respondExtensionUi(first.requestId, "resolved", shipNowOption!.id, loaded.identity),
       ).toBe(true);
 
       const second = await waitForEvent<DecisionPayload>(
@@ -329,11 +299,12 @@ describe("pinned published Extension compatibility", () => {
           payload.requestId !== first.requestId,
       );
       expect(second.groupKey).toBe(first.groupKey);
-      expect(
-        respondExtensionUi(second.requestId, "cancelled", undefined, loaded.identity),
-      ).toBe(true);
+      expect(respondExtensionUi(second.requestId, "cancelled", undefined, loaded.identity)).toBe(
+        true,
+      );
 
       await expect(running).resolves.toMatchObject({
+        content: [{ type: "text", text: "User declined to answer questions" }],
         details: {
           cancelled: true,
           answers: [
@@ -345,16 +316,94 @@ describe("pinned published Extension compatibility", () => {
         },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(
+      expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(false);
+    } finally {
+      loaded.cleanup();
+    }
+  }, 30_000);
+
+  it("submits native custom entry as one question while retaining option answers and previews", async () => {
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-custom");
+    try {
+      const preview = "## Release preview\nShip the current version.";
+      const running = registeredAskUserTool(loaded.session).execute(
+        "tool-call-rpiv-v2-custom",
+        {
+          questions: [
+            {
+              ...QUESTIONNAIRE.questions[0],
+              options: QUESTIONNAIRE.questions[0]!.options.map((option, index) =>
+                index === 0 ? { ...option, preview } : option,
+              ),
+            },
+            QUESTIONNAIRE.questions[1],
+          ],
+        },
+        undefined,
+        undefined,
+      );
+      const first = await waitForEvent<DecisionPayload>(loaded.events, "extensionUi.request");
+      expect(first.customInputOptionId).toBe(first.options?.at(-1)?.id);
+      expect(
+        respondExtensionUi(first.requestId, "resolved", first.options![0]!.id, loaded.identity),
+      ).toBe(true);
+      const second = await waitForEvent<DecisionPayload>(
+        loaded.events,
+        "extensionUi.request",
+        (payload) => payload.requestId !== first.requestId,
+      );
+      expect(second.customInputOptionId).toBe(second.options?.at(-1)?.id);
+      expect(second.groupKey).toBe(first.groupKey);
+      const customAnswer = { optionId: second.customInputOptionId!, input: "Add audit logging" };
+      expect(
+        respondExtensionUi(second.requestId, "resolved", customAnswer, {
+          ...loaded.identity,
+          sessionId: "different-session",
+        }),
+      ).toBe(false);
+      for (const invalid of [
+        { ...customAnswer, optionId: second.options![0]!.id },
+        { ...customAnswer, input: 42 },
+        { ...customAnswer, extra: true },
+        { input: "Missing option" },
+      ]) {
+        expect(respondExtensionUi(second.requestId, "resolved", invalid, loaded.identity)).toBe(
+          false,
+        );
+      }
+      expect(respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity)).toBe(
+        true,
+      );
+      expect(respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity)).toBe(
         false,
       );
+
+      await expect(running).resolves.toMatchObject({
+        details: {
+          cancelled: false,
+          answers: [
+            { questionIndex: 0, kind: "option", answer: "Ship now", preview },
+            { questionIndex: 1, kind: "custom", answer: "Add audit logging" },
+          ],
+        },
+      });
+      expect(loaded.events.filter((event) => event.event === "extensionUi.request")).toHaveLength(
+        2,
+      );
+      expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
+      expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
+        {
+          event: "extensionUi.groupClosed",
+          payload: { groupKey: first.groupKey, status: "completed" },
+        },
+      ]);
     } finally {
       loaded.cleanup();
     }
   }, 30_000);
 
   it("runs the pinned rpiv v2 numeric multi-select fallback through native input", async () => {
-    const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2-multi");
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-multi");
     try {
       const running = registeredAskUserTool(loaded.session).execute(
         "tool-call-rpiv-v2-multi",
@@ -395,9 +444,7 @@ describe("pinned published Extension compatibility", () => {
           questions: [expect.objectContaining({ multiSelect: true })],
         }),
       ]);
-      expect(
-        respondExtensionUi(request.requestId, "resolved", "1,2", loaded.identity),
-      ).toBe(true);
+      expect(respondExtensionUi(request.requestId, "resolved", "1,2", loaded.identity)).toBe(true);
 
       await expect(running).resolves.toMatchObject({
         details: {
@@ -417,7 +464,7 @@ describe("pinned published Extension compatibility", () => {
   }, 30_000);
 
   it("closes the pinned rpiv v2 decision when its tool signal aborts", async () => {
-    const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2-abort");
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-abort");
     try {
       const controller = new AbortController();
       const running = registeredAskUserTool(loaded.session).execute(
@@ -444,16 +491,16 @@ describe("pinned published Extension compatibility", () => {
         details: { answers: [], cancelled: true },
       });
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(
-        respondExtensionUi(request.requestId, "resolved", "late", loaded.identity),
-      ).toBe(false);
+      expect(respondExtensionUi(request.requestId, "resolved", "late", loaded.identity)).toBe(
+        false,
+      );
     } finally {
       loaded.cleanup();
     }
   }, 30_000);
 
   it("isolates parallel pinned rpiv v2 prompts and accepts out-of-order responses", async () => {
-    const loaded = await loadPublishedExtension(RPIV_V2_ENTRYPOINT, "session-rpiv-v2-parallel");
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-parallel");
     try {
       const tool = registeredAskUserTool(loaded.session);
       const firstRun = tool.execute(
@@ -504,22 +551,34 @@ describe("pinned published Extension compatibility", () => {
       expect(first.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
       expect(second.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
       expect(second.groupKey).not.toBe(first.groupKey);
-      const stable = second.options?.find((option) => option.label.includes("Stable"));
-      const alpha = first.options?.find((option) => option.label.includes("Alpha"));
-      expect(stable).toBeDefined();
-      expect(alpha).toBeDefined();
+      expect(first.customInputOptionId).toBeDefined();
+      expect(second.customInputOptionId).toBeDefined();
       expect(
-        respondExtensionUi(second.requestId, "resolved", stable!.id, loaded.identity),
+        respondExtensionUi(
+          second.requestId,
+          "resolved",
+          { optionId: second.customInputOptionId, input: "Lane B custom answer" },
+          loaded.identity,
+        ),
       ).toBe(true);
       expect(
-        respondExtensionUi(first.requestId, "resolved", alpha!.id, loaded.identity),
+        respondExtensionUi(
+          first.requestId,
+          "resolved",
+          { optionId: first.customInputOptionId, input: "Lane A custom answer" },
+          loaded.identity,
+        ),
       ).toBe(true);
 
       await expect(secondRun).resolves.toMatchObject({
-        details: { answers: [expect.objectContaining({ answer: "Stable" })] },
+        details: {
+          answers: [expect.objectContaining({ kind: "custom", answer: "Lane B custom answer" })],
+        },
       });
       await expect(firstRun).resolves.toMatchObject({
-        details: { answers: [expect.objectContaining({ answer: "Alpha" })] },
+        details: {
+          answers: [expect.objectContaining({ kind: "custom", answer: "Lane A custom answer" })],
+        },
       });
       const closedGroups = loaded.events
         .filter((event) => event.event === "extensionUi.groupClosed")
@@ -534,7 +593,9 @@ describe("pinned published Extension compatibility", () => {
       loaded.cleanup();
     }
   }, 30_000);
+});
 
+describe("pinned rpiv v1 custom terminal compatibility", () => {
   it("keeps the pinned rpiv v1 package on the custom terminal fallback", async () => {
     const loaded = await loadPublishedExtension(RPIV_V1_ENTRYPOINT, "session-rpiv-v1");
     try {
@@ -555,18 +616,14 @@ describe("pinned published Extension compatibility", () => {
           questions: [expect.objectContaining({ question: "When should this ship?" })],
         }),
       ]);
-      expect(
-        loaded.events.some((event) => event.event === "extensionUi.request"),
-      ).toBe(false);
-      expect(
-        respondExtensionUi(started.requestId, "cancelled", undefined, loaded.identity),
-      ).toBe(true);
+      expect(loaded.events.some((event) => event.event === "extensionUi.request")).toBe(false);
+      expect(respondExtensionUi(started.requestId, "cancelled", undefined, loaded.identity)).toBe(
+        true,
+      );
       await expect(running).resolves.toMatchObject({
         details: { answers: [], cancelled: true },
       });
-      expect(
-        loaded.events.filter((event) => event.event === "extensionUi.customClosed"),
-      ).toEqual([
+      expect(loaded.events.filter((event) => event.event === "extensionUi.customClosed")).toEqual([
         {
           event: "extensionUi.customClosed",
           payload: { requestId: started.requestId },

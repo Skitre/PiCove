@@ -129,6 +129,7 @@ const VALID_PARAMS: Record<HostMethod, unknown> = {
   "session.getSnapshot": null,
   "session.setName": { name: "n" },
   "session.rename": { sessionId: SESSION_ID, sessionPath: "/s.jsonl", name: "n" },
+  "session.generateTitle": { sessionId: SESSION_ID, sessionPath: "/s.jsonl" },
   "session.getEntries": null,
   "session.getTree": null,
   "session.getStats": null,
@@ -331,6 +332,7 @@ function invalidParams(method: HostMethod): unknown {
     case "session.archive":
     case "session.restore":
     case "session.delete":
+    case "session.generateTitle":
       return { sessionId: "not-a-uuid", sessionPath: "" };
     case "session.setName":
       return {};

@@ -41,6 +41,7 @@
   "devDependencies": {
     "@pideck-test/rpiv-ask-user-question-v1": "npm:@juicesharp/rpiv-ask-user-question@1.20.0",
     "@pideck-test/rpiv-ask-user-question-v2": "npm:@juicesharp/rpiv-ask-user-question@2.1.0",
+    "@pideck-test/rpiv-ask-user-question-v2-6": "npm:@juicesharp/rpiv-ask-user-question@2.6.1",
     "@types/cross-spawn": "6.0.6",
     "@types/node": "24.12.4",
     "@types/proper-lockfile": "4.1.4",

@@ -69,6 +69,10 @@ import {
   resolveExtensionUiOwnerSessionState,
 } from "./extension-ui-policy.js";
 import { ExtensionUiGroupRegistry } from "./extension-ui-groups.js";
+import {
+  isQuestionnaireCustomResponse,
+  questionnaireCustomOptionIndex,
+} from "./extension-questionnaire-compat.js";
 import { createDesktopExtensionTheme } from "./extension-rendering-theme.js";
 import {
   extensionMessageRenderEqual,
@@ -78,6 +82,7 @@ import {
 type PendingUi = {
   requestId: string;
   kind: string;
+  customInputOptionId?: string;
   owner: ExtensionUiOwner;
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
@@ -488,6 +493,10 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     opts.emit("extensionUi.groupClosed", payload),
   );
   opts.registerCleanup?.(() => decisionGroups.closeAll("cancelled"));
+  const customInputAnswers = new WeakMap<
+    ExtensionInvocationContext,
+    { value: string; owner: ExtensionUiOwner }
+  >();
   const desktopTheme = createDesktopExtensionTheme();
   const activeWidgetFactories = new Map<string, ActiveWidgetFactory>();
   const publishedWidgetKeys = new Set<string>();
@@ -688,12 +697,19 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     });
     if (route.disposition === "cancel") return undefined;
     const groupKey = decisionGroups.groupForRequest(invocation, id);
+    const customInputOptionId =
+      kind === "select" &&
+      typeof payload.customInputOptionId === "string" &&
+      options?.some((option) => option.id === payload.customInputOptionId)
+        ? payload.customInputOptionId
+        : undefined;
 
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
       const entry: PendingUi = {
         requestId,
         kind,
+        ...(customInputOptionId ? { customInputOptionId } : {}),
         owner: ownerFromIdentity(id),
         resolve,
         reject,
@@ -766,6 +782,7 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
           risk: route.risk,
           routeReason: route.reason,
           ...(groupKey ? { groupKey } : {}),
+          ...(customInputOptionId ? { customInputOptionId } : {}),
         });
       } catch (err) {
         settlePending(requestId, {
@@ -780,15 +797,30 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
     select: async (title, options, dialogOpts) => {
       const prepared = prepareSelectOptions(options);
       if (prepared.options.length === 0) return undefined;
+      const invocation = activeInvocation();
+      if (invocation) customInputAnswers.delete(invocation);
+      const customOptionIndex = questionnaireCustomOptionIndex(invocation, options);
+      const customOption =
+        customOptionIndex !== undefined && prepared.options.length === options.length
+          ? prepared.options[customOptionIndex]
+          : undefined;
       const value = await requestBlocking(
         "select",
         {
           title,
           options: prepared.options,
+          ...(customOption ? { customInputOptionId: customOption.id } : {}),
           pideck: piDeckMetadataFromDialogOptions(dialogOpts),
         },
         dialogOpts,
       );
+      if (invocation && customOption && isQuestionnaireCustomResponse(value, customOption.id)) {
+        customInputAnswers.set(invocation, {
+          value: value.input,
+          owner: ownerFromIdentity(identityAt()),
+        });
+        return prepared.responseValues.get(customOption.id);
+      }
       return typeof value === "string" ? prepared.responseValues.get(value) : undefined;
     },
     confirm: async (title, message, dialogOpts) => {
@@ -800,6 +832,17 @@ export function createExtensionUiContext(opts: ExtensionUiBridgeOptions): Extens
       return value === true;
     },
     input: async (title, placeholder, dialogOpts) => {
+      const invocation = activeInvocation();
+      const customAnswer = invocation && customInputAnswers.get(invocation);
+      if (invocation && customAnswer) {
+        customInputAnswers.delete(invocation);
+        return !opts.isDisposed?.() &&
+          !invocation.signal?.aborted &&
+          !dialogOpts?.signal?.aborted &&
+          ownerMatches(customAnswer.owner, ownerFromIdentity(identityAt()))
+          ? customAnswer.value
+          : undefined;
+      }
       const value = await requestBlocking(
         "input",
         {
@@ -1423,6 +1466,14 @@ export function respondExtensionUi(
   const p = pending.get(requestId);
   if (!p) return false;
   if (!ownerMatches(p.owner, expectedOwner)) return false;
+  if (
+    status === "resolved" &&
+    p.customInputOptionId &&
+    typeof value !== "string" &&
+    !isQuestionnaireCustomResponse(value, p.customInputOptionId)
+  ) {
+    return false;
+  }
   return settlePending(requestId, {
     status: "resolved",
     value: status === "cancelled" ? undefined : value,
@@ -1561,6 +1612,12 @@ export function createExtensionUiHandlers(
           error: createHostError(
             "STALE_REVISION",
             "Unknown, expired, or stale Extension UI requestId",
+            {
+              details: {
+                requestId: params.requestId,
+                requestClosed: !pending.has(params.requestId),
+              },
+            },
           ),
         };
       }
