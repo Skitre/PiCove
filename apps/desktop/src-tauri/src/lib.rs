@@ -49,6 +49,11 @@ pub fn run() {
             {
                 let _ = webview.eval("document.documentElement.dataset.windowMaterial = 'opaque';");
             }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = (webview, payload);
+            }
         })
         .setup(|app| {
             system_tray::install(app)?;
