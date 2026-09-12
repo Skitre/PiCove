@@ -45,6 +45,7 @@ import {
 } from "../../lib/bridge/host-context";
 import { subscribeValidatedHostEvent } from "../../lib/bridge/validated-host-events";
 import { subscribeComposerInsert } from "../../lib/composer-insert";
+import { attachMacArrowKeyInsertGuard } from "../../lib/mac-arrow-key-insert";
 import { BUILTIN_COMMANDS, matchBuiltinCommand } from "./builtin-commands";
 import { abortCompaction, requestCompact } from "./compaction-actions";
 import { SessionStatsModal } from "./SessionStatsModal";
@@ -59,6 +60,7 @@ import {
   pickDesktopAttachmentPaths,
   readDesktopSmallFile,
 } from "../../lib/desktop-file-access";
+import { resolveWindowControlsPlatform } from "../../components/WindowControls";
 import { contextMenuTrigger, openContextMenu } from "../../lib/context-menu";
 import { shouldKeepNativeContextMenu } from "../../lib/context-menu-policy";
 import { buildTextContextMenuItems } from "../../lib/text-context-menu";
@@ -391,6 +393,12 @@ export function Composer({
       }),
     [],
   );
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    return attachMacArrowKeyInsertGuard(textarea, resolveWindowControlsPlatform() === "macos");
+  }, []);
 
   // Attachments are per-conversation; drop them when the session changes.
   useEffect(() => {
