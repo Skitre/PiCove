@@ -41,7 +41,7 @@ objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 # Tauri #15625 restores the last child WebView focus after Windows activation.
 # Remove this Git patch after the fix ships in a tauri-runtime-wry release.

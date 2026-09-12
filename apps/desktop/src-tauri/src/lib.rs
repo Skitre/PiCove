@@ -10,6 +10,7 @@ mod pi_host;
 mod pi_host_tests;
 mod shell_terminal;
 mod system_tray;
+mod window_state;
 
 use desktop_settings::DesktopSettingsStore;
 use draft_store::DraftStore;
@@ -147,8 +148,10 @@ pub fn run() {
                 });
             });
 
+            window_state::restore_and_track(app.handle())?;
             Ok(())
         })
+        .on_window_event(window_state::on_window_event)
         .invoke_handler(tauri::generate_handler![
             fonts::desktop_fonts_list,
             fonts::desktop_fonts_import,
@@ -213,6 +216,7 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
+                window_state::save(app_handle);
                 system_tray::remove(app_handle);
                 let handle = app_handle.clone();
                 tauri::async_runtime::block_on(async move {

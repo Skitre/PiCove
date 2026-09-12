@@ -7,6 +7,7 @@ import windowsConfig from "../../src-tauri/tauri.windows.conf.json";
 
 type WindowConfig = {
   title: string;
+  visible: boolean;
   width: number;
   height: number;
   minWidth: number;
@@ -30,6 +31,14 @@ const windowsWindow = windowsConfig.app.windows[0] as WindowConfig;
 const cargoManifest = readFileSync(new URL("../../src-tauri/Cargo.toml", import.meta.url), "utf8");
 
 describe("native window platform configuration", () => {
+  it.each([
+    ["base", baseWindow],
+    ["macOS", macosWindow],
+    ["Windows", windowsWindow],
+  ])("restores geometry before showing the %s main window", (_platform, window) => {
+    expect(window.visible).toBe(false);
+  });
+
   it("allows the intercepted close flow to destroy the main window", () => {
     expect(defaultCapability.webviews).toContain("main");
     expect(defaultCapability.permissions).toEqual(
