@@ -237,4 +237,65 @@ describe("Model controls", () => {
 
     expect(container.querySelector("[data-composer-thinking-control]")).not.toBeInTheDocument();
   });
+
+  it("keeps Extra high as one thinking-level item and sends xhigh", async () => {
+    useAppStore.getState().setThinkingLevels(["off", "high", "xhigh", "max"]);
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method !== "model.setThinkingLevel") throw new Error(`Unexpected method ${method}`);
+      return envelope(method, { ...session(), thinkingLevel: "xhigh" }) as never;
+    });
+    const user = userEvent.setup();
+    render(<ThinkingLevelControl />);
+
+    await user.click(screen.getByRole("button", { name: "Thinking level, currently Off" }));
+    const menu = screen.getByRole("menu", { name: "Thinking level, currently Off" });
+    const extra = screen.getByRole("menuitemradio", { name: /^Extra high$/ });
+    expect(menu).toHaveClass("w-max");
+    expect(extra).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("menuitemradio", { name: /^High$/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: /^Max$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: /^Extra$/ })).not.toBeInTheDocument();
+    await user.click(extra);
+
+    expect(hostClient.request).toHaveBeenCalledWith("model.setThinkingLevel", expect.anything(), {
+      level: "xhigh",
+    });
+  });
+
+  it("keeps Extra high as one item in the model thinking submenu", async () => {
+    const model: ModelSummary = {
+      ...MODEL,
+      thinkingLevels: ["off", "high", "xhigh", "max"],
+    };
+    vi.spyOn(hostClient, "request").mockImplementation(async (method: string) => {
+      if (method === "model.list") {
+        return envelope(method, {
+          models: [model],
+          current: model,
+          thinkingLevels: ["off", "high", "xhigh", "max"],
+          enabledProviders: ["muapi"],
+        }) as never;
+      }
+      if (method === "model.setThinkingLevel") {
+        return envelope(method, { ...session(), model, thinkingLevel: "xhigh" }) as never;
+      }
+      throw new Error(`Unexpected method ${method}`);
+    });
+    useAppStore.getState().applySessionSnapshot({ ...session(), model });
+    const user = userEvent.setup();
+    render(<ModelControls />);
+
+    await user.click(await screen.findByRole("button", { name: "muapi/Grok 4.5" }));
+    await user.click(screen.getByRole("button", { name: "Thinking level for muapi/Grok 4.5" }));
+    const submenu = screen.getByRole("menu", { name: "Thinking level for muapi/Grok 4.5" });
+    const extra = screen.getByRole("menuitemradio", { name: /^Extra high$/ });
+    expect(submenu).toHaveClass("w-max");
+    expect(extra).toHaveClass("whitespace-nowrap");
+    expect(screen.queryByRole("menuitemradio", { name: /^Extra$/ })).not.toBeInTheDocument();
+    await user.click(extra);
+
+    expect(hostClient.request).toHaveBeenCalledWith("model.setThinkingLevel", expect.anything(), {
+      level: "xhigh",
+    });
+  });
 });
