@@ -339,7 +339,7 @@ export function ThinkingLevelControl() {
       <button
         ref={triggerRef}
         type="button"
-        className="flex h-7 cursor-pointer items-center gap-1 text-[11px] text-muted outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-default disabled:opacity-40"
+        className="flex h-7 cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] text-muted outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-focus disabled:cursor-default disabled:opacity-40"
         aria-label={accessibleLabel}
         title={accessibleLabel}
         aria-haspopup="menu"
@@ -361,7 +361,7 @@ export function ThinkingLevelControl() {
           ref={menuRef}
           role="menu"
           aria-label={accessibleLabel}
-          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-28 overflow-hidden rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
+          className="theme-floating-surface absolute bottom-full right-0 z-50 mb-2 min-w-28 w-max overflow-hidden rounded-md border border-border bg-surface-raised py-0.5 shadow-lg"
         >
           {levels.map((level) => {
             const active = level === currentLevel;
@@ -373,7 +373,7 @@ export function ThinkingLevelControl() {
                 aria-checked={active}
                 aria-busy={pending || undefined}
                 disabled={pending}
-                className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:opacity-50 ${
+                className={`flex h-7 w-full items-center gap-1.5 whitespace-nowrap px-2 text-left text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus disabled:opacity-50 ${
                   active
                     ? "bg-accent/15 text-accent"
                     : "text-muted hover:bg-surface-overlay hover:text-foreground"
@@ -805,7 +805,7 @@ export function ModelControls() {
             </div>
             {thinkingModel && (
               <div
-                className="theme-floating-surface absolute left-full ml-2 min-w-[112px] overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
+                className="theme-floating-surface absolute left-full ml-2 min-w-[112px] w-max overflow-hidden rounded-md border border-border bg-surface-raised py-1 shadow-lg"
                 style={{ top: thinkingMenuTop }}
                 role="menu"
                 aria-label={t("modelThinkingFor", { model: modelOptionLabel(thinkingModel) })}
@@ -821,7 +821,7 @@ export function ModelControls() {
                       <button
                         key={level}
                         type="button"
-                        className={`flex h-7 w-full items-center gap-1.5 px-2 text-left text-[11px] capitalize ${
+                        className={`flex h-7 w-full items-center gap-1.5 whitespace-nowrap px-2 text-left text-[11px] capitalize ${
                           active
                             ? "bg-accent/15 text-accent"
                             : "text-muted hover:bg-surface-overlay hover:text-foreground"
