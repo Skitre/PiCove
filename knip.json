@@ -24,6 +24,7 @@
     },
     "packages/pi-host": {
       "ignoreBinaries": ["where"],
+      "ignoreDependencies": ["@pideck-test/rpiv-ask-user-question-latest"],
       "ignore": ["src/idle-shutdown-hold.test.harness.ts"],
       "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts"]

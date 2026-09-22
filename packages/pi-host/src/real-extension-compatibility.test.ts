@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import {
   createAgentSession,
   createEventBus,
@@ -16,6 +18,7 @@ import {
   respondExtensionUi,
   type ExtensionUiBinding,
 } from "./extension-ui-bridge.js";
+import { QUESTIONNAIRE_CUSTOM_INPUT_VERSIONS } from "./extension-questionnaire-compat.js";
 import { createTestModelServices } from "./test-helpers/model-runtime.js";
 import { createTempAgentLayout, type TempAgentLayout } from "./test-helpers/temp-agent.js";
 
@@ -23,6 +26,12 @@ const require = createRequire(import.meta.url);
 const RPIV_V1_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v1");
 const RPIV_V2_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v2");
 const RPIV_V2_6_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v2-6");
+const RPIV_V2_10_ENTRYPOINT = require.resolve("@pideck-test/rpiv-ask-user-question-v2-10");
+const rpcEntrypoints = [RPIV_V2_ENTRYPOINT, RPIV_V2_6_ENTRYPOINT, RPIV_V2_10_ENTRYPOINT];
+if (process.env.PIDECK_RPIV_LATEST === "1") {
+  rpcEntrypoints.push(require.resolve("@pideck-test/rpiv-ask-user-question-latest"));
+}
+const runningTools = new WeakMap<AgentSession, Promise<unknown>[]>();
 
 type EmittedEvent = { event: HostEventName; payload: unknown };
 
@@ -52,7 +61,7 @@ type LoadedExtension = {
   promptEvents: unknown[];
   blockedEvents: unknown[];
   session: AgentSession;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 };
 
 function identity(sessionId: string): HostIdentity {
@@ -98,6 +107,8 @@ async function loadPublishedExtension(
     sessionManager: SessionManager.inMemory(),
   });
 
+  const executions: Promise<unknown>[] = [];
+  runningTools.set(session, executions);
   const events: EmittedEvent[] = [];
   const owner = identity(sessionId);
   const binding = await bindExtensionUi(session, null, {
@@ -118,8 +129,11 @@ async function loadPublishedExtension(
     promptEvents,
     blockedEvents,
     session,
-    cleanup: () => {
+    cleanup: async () => {
+      // Cancel dialogs while the SDK context is still valid, then let tool finally
+      // blocks (including blocked:false events) finish before disposing the session.
       binding.cleanup();
+      await Promise.allSettled(executions);
       session.dispose();
       eventBus.clear();
       layout.cleanup();
@@ -148,7 +162,17 @@ function registeredAskUserTool(session: AgentSession) {
     .getAllRegisteredTools()
     .find((tool) => tool.definition.name === "ask_user_question");
   expect(registered).toBeDefined();
-  return wrapRegisteredTool(registered!, session.extensionRunner);
+  const tool = wrapRegisteredTool(registered!, session.extensionRunner);
+  const execute = tool.execute.bind(tool);
+  tool.execute = (...args) => {
+    const running = execute(...args);
+    runningTools.get(session)!.push(running);
+    // Observe immediately, even if an assertion fails before the test awaits it.
+    // Return the original promise so result assertions still see rejections.
+    void running.catch(() => {});
+    return running;
+  };
+  return tool;
 }
 
 const QUESTIONNAIRE = {
@@ -176,10 +200,56 @@ afterEach(() => {
   cancelAllPending("real extension compatibility cleanup");
 });
 
-describe.each([
-  ["2.1.0", RPIV_V2_ENTRYPOINT],
-  ["2.6.1", RPIV_V2_6_ENTRYPOINT],
-])("pinned rpiv %s RPC compatibility", (_version, entrypoint) => {
+describe.each(
+  rpcEntrypoints.map((entrypoint) => {
+    const { version } = JSON.parse(
+      readFileSync(join(dirname(entrypoint), "package.json"), "utf8"),
+    ) as { version: string };
+    return { version, entrypoint };
+  }),
+)("rpiv $version RPC compatibility", ({ version, entrypoint }) => {
+  const enhanced = QUESTIONNAIRE_CUSTOM_INPUT_VERSIONS.some((known) => known === version);
+
+  it("has explicit desktop enhancement coverage for the installed version", () => {
+    expect(
+      enhanced,
+      `rpiv ${version}: native custom-input enhancement is not yet verified; add a pinned regression before enabling it`,
+    ).toBe(true);
+  });
+
+  it("settles pending parallel tools before disposing after an early test failure", async () => {
+    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-cleanup");
+    const tool = registeredAskUserTool(loaded.session);
+    const runs = ["cleanup-a", "cleanup-b"].map((id) =>
+      tool.execute(id, QUESTIONNAIRE, undefined, undefined),
+    );
+    const earlyFailure = new Error("Simulated assertion failure before answering");
+    await expect(
+      (async () => {
+        try {
+          for (const id of ["cleanup-a", "cleanup-b"]) {
+            await waitForEvent<DecisionPayload>(
+              loaded.events,
+              "extensionUi.request",
+              (payload) => payload.origin.toolCallId === id,
+            );
+          }
+          throw earlyFailure;
+        } finally {
+          await loaded.cleanup();
+        }
+      })(),
+    ).rejects.toBe(earlyFailure);
+    for (const running of runs) {
+      await expect(running).resolves.toMatchObject({ details: { cancelled: true } });
+    }
+    expect(loaded.blockedEvents).toEqual([
+      { active: true },
+      { active: true },
+      { active: false },
+      { active: false },
+    ]);
+  }, 30_000);
   it("runs the pinned rpiv v2 package through native RPC decisions", async () => {
     const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2");
     try {
@@ -267,7 +337,7 @@ describe.each([
         false,
       );
     } finally {
-      loaded.cleanup();
+      await loaded.cleanup();
     }
   }, 30_000);
 
@@ -318,89 +388,93 @@ describe.each([
       expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
       expect(respondExtensionUi(second.requestId, "resolved", "late", loaded.identity)).toBe(false);
     } finally {
-      loaded.cleanup();
+      await loaded.cleanup();
     }
   }, 30_000);
 
-  it("submits native custom entry as one question while retaining option answers and previews", async () => {
-    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-custom");
-    try {
-      const preview = "## Release preview\nShip the current version.";
-      const running = registeredAskUserTool(loaded.session).execute(
-        "tool-call-rpiv-v2-custom",
-        {
-          questions: [
-            {
-              ...QUESTIONNAIRE.questions[0],
-              options: QUESTIONNAIRE.questions[0]!.options.map((option, index) =>
-                index === 0 ? { ...option, preview } : option,
-              ),
-            },
-            QUESTIONNAIRE.questions[1],
-          ],
-        },
-        undefined,
-        undefined,
-      );
-      const first = await waitForEvent<DecisionPayload>(loaded.events, "extensionUi.request");
-      expect(first.customInputOptionId).toBe(first.options?.at(-1)?.id);
-      expect(
-        respondExtensionUi(first.requestId, "resolved", first.options![0]!.id, loaded.identity),
-      ).toBe(true);
-      const second = await waitForEvent<DecisionPayload>(
-        loaded.events,
-        "extensionUi.request",
-        (payload) => payload.requestId !== first.requestId,
-      );
-      expect(second.customInputOptionId).toBe(second.options?.at(-1)?.id);
-      expect(second.groupKey).toBe(first.groupKey);
-      const customAnswer = { optionId: second.customInputOptionId!, input: "Add audit logging" };
-      expect(
-        respondExtensionUi(second.requestId, "resolved", customAnswer, {
-          ...loaded.identity,
-          sessionId: "different-session",
-        }),
-      ).toBe(false);
-      for (const invalid of [
-        { ...customAnswer, optionId: second.options![0]!.id },
-        { ...customAnswer, input: 42 },
-        { ...customAnswer, extra: true },
-        { input: "Missing option" },
-      ]) {
-        expect(respondExtensionUi(second.requestId, "resolved", invalid, loaded.identity)).toBe(
-          false,
+  it.skipIf(!enhanced)(
+    "submits native custom entry as one question while retaining option answers and previews",
+    async () => {
+      const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-custom");
+      try {
+        const preview = "## Release preview\nShip the current version.";
+        const running = registeredAskUserTool(loaded.session).execute(
+          "tool-call-rpiv-v2-custom",
+          {
+            questions: [
+              {
+                ...QUESTIONNAIRE.questions[0],
+                options: QUESTIONNAIRE.questions[0]!.options.map((option, index) =>
+                  index === 0 ? { ...option, preview } : option,
+                ),
+              },
+              QUESTIONNAIRE.questions[1],
+            ],
+          },
+          undefined,
+          undefined,
         );
-      }
-      expect(respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity)).toBe(
-        true,
-      );
-      expect(respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity)).toBe(
-        false,
-      );
+        const first = await waitForEvent<DecisionPayload>(loaded.events, "extensionUi.request");
+        expect(first.customInputOptionId).toBe(first.options?.at(-1)?.id);
+        expect(
+          respondExtensionUi(first.requestId, "resolved", first.options![0]!.id, loaded.identity),
+        ).toBe(true);
+        const second = await waitForEvent<DecisionPayload>(
+          loaded.events,
+          "extensionUi.request",
+          (payload) => payload.requestId !== first.requestId,
+        );
+        expect(second.customInputOptionId).toBe(second.options?.at(-1)?.id);
+        expect(second.groupKey).toBe(first.groupKey);
+        const customAnswer = { optionId: second.customInputOptionId!, input: "Add audit logging" };
+        expect(
+          respondExtensionUi(second.requestId, "resolved", customAnswer, {
+            ...loaded.identity,
+            sessionId: "different-session",
+          }),
+        ).toBe(false);
+        for (const invalid of [
+          { ...customAnswer, optionId: second.options![0]!.id },
+          { ...customAnswer, input: 42 },
+          { ...customAnswer, extra: true },
+          { input: "Missing option" },
+        ]) {
+          expect(respondExtensionUi(second.requestId, "resolved", invalid, loaded.identity)).toBe(
+            false,
+          );
+        }
+        expect(
+          respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity),
+        ).toBe(true);
+        expect(
+          respondExtensionUi(second.requestId, "resolved", customAnswer, loaded.identity),
+        ).toBe(false);
 
-      await expect(running).resolves.toMatchObject({
-        details: {
-          cancelled: false,
-          answers: [
-            { questionIndex: 0, kind: "option", answer: "Ship now", preview },
-            { questionIndex: 1, kind: "custom", answer: "Add audit logging" },
-          ],
-        },
-      });
-      expect(loaded.events.filter((event) => event.event === "extensionUi.request")).toHaveLength(
-        2,
-      );
-      expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
-      expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
-        {
-          event: "extensionUi.groupClosed",
-          payload: { groupKey: first.groupKey, status: "completed" },
-        },
-      ]);
-    } finally {
-      loaded.cleanup();
-    }
-  }, 30_000);
+        await expect(running).resolves.toMatchObject({
+          details: {
+            cancelled: false,
+            answers: [
+              { questionIndex: 0, kind: "option", answer: "Ship now", preview },
+              { questionIndex: 1, kind: "custom", answer: "Add audit logging" },
+            ],
+          },
+        });
+        expect(loaded.events.filter((event) => event.event === "extensionUi.request")).toHaveLength(
+          2,
+        );
+        expect(loaded.blockedEvents).toEqual([{ active: true }, { active: false }]);
+        expect(loaded.events.filter((event) => event.event === "extensionUi.groupClosed")).toEqual([
+          {
+            event: "extensionUi.groupClosed",
+            payload: { groupKey: first.groupKey, status: "completed" },
+          },
+        ]);
+      } finally {
+        await loaded.cleanup();
+      }
+    },
+    30_000,
+  );
 
   it("runs the pinned rpiv v2 numeric multi-select fallback through native input", async () => {
     const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-multi");
@@ -459,7 +533,7 @@ describe.each([
         },
       });
     } finally {
-      loaded.cleanup();
+      await loaded.cleanup();
     }
   }, 30_000);
 
@@ -495,104 +569,108 @@ describe.each([
         false,
       );
     } finally {
-      loaded.cleanup();
+      await loaded.cleanup();
     }
   }, 30_000);
 
-  it("isolates parallel pinned rpiv v2 prompts and accepts out-of-order responses", async () => {
-    const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-parallel");
-    try {
-      const tool = registeredAskUserTool(loaded.session);
-      const firstRun = tool.execute(
-        "tool-call-rpiv-v2-parallel-a",
-        {
-          questions: [
-            {
-              question: "Choose the first rollout lane?",
-              header: "Lane A",
-              options: [
-                { label: "Alpha", description: "Use the alpha lane." },
-                { label: "Beta", description: "Use the beta lane." },
-              ],
-            },
-          ],
-        },
-        undefined,
-        undefined,
-      );
-      const secondRun = tool.execute(
-        "tool-call-rpiv-v2-parallel-b",
-        {
-          questions: [
-            {
-              question: "Choose the second rollout lane?",
-              header: "Lane B",
-              options: [
-                { label: "Canary", description: "Use the canary lane." },
-                { label: "Stable", description: "Use the stable lane." },
-              ],
-            },
-          ],
-        },
-        undefined,
-        undefined,
-      );
-      const first = await waitForEvent<DecisionPayload>(
-        loaded.events,
-        "extensionUi.request",
-        (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-parallel-a",
-      );
-      const second = await waitForEvent<DecisionPayload>(
-        loaded.events,
-        "extensionUi.request",
-        (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-parallel-b",
-      );
+  it.skipIf(!enhanced)(
+    "isolates parallel pinned rpiv v2 prompts and accepts out-of-order responses",
+    async () => {
+      const loaded = await loadPublishedExtension(entrypoint, "session-rpiv-v2-parallel");
+      try {
+        const tool = registeredAskUserTool(loaded.session);
+        const firstRun = tool.execute(
+          "tool-call-rpiv-v2-parallel-a",
+          {
+            questions: [
+              {
+                question: "Choose the first rollout lane?",
+                header: "Lane A",
+                options: [
+                  { label: "Alpha", description: "Use the alpha lane." },
+                  { label: "Beta", description: "Use the beta lane." },
+                ],
+              },
+            ],
+          },
+          undefined,
+          undefined,
+        );
+        const secondRun = tool.execute(
+          "tool-call-rpiv-v2-parallel-b",
+          {
+            questions: [
+              {
+                question: "Choose the second rollout lane?",
+                header: "Lane B",
+                options: [
+                  { label: "Canary", description: "Use the canary lane." },
+                  { label: "Stable", description: "Use the stable lane." },
+                ],
+              },
+            ],
+          },
+          undefined,
+          undefined,
+        );
+        const first = await waitForEvent<DecisionPayload>(
+          loaded.events,
+          "extensionUi.request",
+          (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-parallel-a",
+        );
+        const second = await waitForEvent<DecisionPayload>(
+          loaded.events,
+          "extensionUi.request",
+          (payload) => payload.origin.toolCallId === "tool-call-rpiv-v2-parallel-b",
+        );
 
-      expect(first.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
-      expect(second.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
-      expect(second.groupKey).not.toBe(first.groupKey);
-      expect(first.customInputOptionId).toBeDefined();
-      expect(second.customInputOptionId).toBeDefined();
-      expect(
-        respondExtensionUi(
-          second.requestId,
-          "resolved",
-          { optionId: second.customInputOptionId, input: "Lane B custom answer" },
-          loaded.identity,
-        ),
-      ).toBe(true);
-      expect(
-        respondExtensionUi(
-          first.requestId,
-          "resolved",
-          { optionId: first.customInputOptionId, input: "Lane A custom answer" },
-          loaded.identity,
-        ),
-      ).toBe(true);
+        expect(first.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
+        expect(second.groupKey).toMatch(/^tool:[0-9a-f]{32}$/);
+        expect(second.groupKey).not.toBe(first.groupKey);
+        expect(first.customInputOptionId).toBeDefined();
+        expect(second.customInputOptionId).toBeDefined();
+        expect(
+          respondExtensionUi(
+            second.requestId,
+            "resolved",
+            { optionId: second.customInputOptionId, input: "Lane B custom answer" },
+            loaded.identity,
+          ),
+        ).toBe(true);
+        expect(
+          respondExtensionUi(
+            first.requestId,
+            "resolved",
+            { optionId: first.customInputOptionId, input: "Lane A custom answer" },
+            loaded.identity,
+          ),
+        ).toBe(true);
 
-      await expect(secondRun).resolves.toMatchObject({
-        details: {
-          answers: [expect.objectContaining({ kind: "custom", answer: "Lane B custom answer" })],
-        },
-      });
-      await expect(firstRun).resolves.toMatchObject({
-        details: {
-          answers: [expect.objectContaining({ kind: "custom", answer: "Lane A custom answer" })],
-        },
-      });
-      const closedGroups = loaded.events
-        .filter((event) => event.event === "extensionUi.groupClosed")
-        .map((event) => event.payload as { groupKey: string; status: string });
-      expect(closedGroups).toEqual(
-        expect.arrayContaining([
-          { groupKey: first.groupKey!, status: "completed" },
-          { groupKey: second.groupKey!, status: "completed" },
-        ]),
-      );
-    } finally {
-      loaded.cleanup();
-    }
-  }, 30_000);
+        await expect(secondRun).resolves.toMatchObject({
+          details: {
+            answers: [expect.objectContaining({ kind: "custom", answer: "Lane B custom answer" })],
+          },
+        });
+        await expect(firstRun).resolves.toMatchObject({
+          details: {
+            answers: [expect.objectContaining({ kind: "custom", answer: "Lane A custom answer" })],
+          },
+        });
+        const closedGroups = loaded.events
+          .filter((event) => event.event === "extensionUi.groupClosed")
+          .map((event) => event.payload as { groupKey: string; status: string });
+        expect(closedGroups).toEqual(
+          expect.arrayContaining([
+            { groupKey: first.groupKey!, status: "completed" },
+            { groupKey: second.groupKey!, status: "completed" },
+          ]),
+        );
+      } finally {
+        await loaded.cleanup();
+      }
+    },
+    30_000,
+  );
 });
 
 describe("pinned rpiv v1 custom terminal compatibility", () => {
@@ -630,7 +708,7 @@ describe("pinned rpiv v1 custom terminal compatibility", () => {
         },
       ]);
     } finally {
-      loaded.cleanup();
+      await loaded.cleanup();
     }
   }, 30_000);
 });

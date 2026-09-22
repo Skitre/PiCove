@@ -12,7 +12,7 @@ import {
 const require = createRequire(import.meta.url);
 const OPTIONS = ["1. Alpha — First lane", "2. Beta — Second lane", "3. Type something."];
 
-function harness(version: "v1" | "v2" | "v2-6" = "v2-6") {
+function harness(version: "v1" | "v2" | "v2-6" | "v2-10" = "v2-10") {
   const identity: HostIdentity = {
     hostInstanceId: "host-questionnaire",
     workspaceId: "workspace-questionnaire",

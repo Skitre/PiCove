@@ -248,7 +248,18 @@ roots when dependency updates reach the entry point.
 The weekly/manual `Extension compatibility latest audit` workflow checks the current
 npm release of the representative v2 questionnaire package. It runs outside the
 pull-request and `main` gates; per-commit compatibility uses the exact versions in the
-lockfile plus the repository behavior-class fixture.
+lockfile plus the repository behavior-class fixture. The audit installs a separate
+`rpiv-ask-user-question-latest` test alias and sets `PIDECK_RPIV_LATEST=1`, preserving
+the pinned 2.1.0, 2.6.1, and 2.10.1 RPC regressions (and the v1 terminal fallback).
+Test labels read the installed package version. Unknown versions still run the
+standard RPC tests; the two native custom-input enhancement tests are skipped and
+a separate coverage assertion fails explicitly until a pinned regression and
+adapter allowlist entry are added. This is an enhancement-coverage alert, not by
+itself evidence that standard RPC is broken.
+
+Published-extension tests cancel pending UI and await tracked tool executions
+before disposing the SDK session, including when an assertion fails early. This
+allows extension cleanup events to finish against a valid context.
 
 `verify:p0` is intentionally broader than the lightweight local gate, but it
 is still not installer evidence. It has run successfully on Apple Silicon

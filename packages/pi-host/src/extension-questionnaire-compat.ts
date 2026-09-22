@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import type { SourceInfo } from "@earendil-works/pi-coding-agent";
 import type { ExtensionInvocationContext } from "./extension-invocation-context.js";
 
+export const QUESTIONNAIRE_CUSTOM_INPUT_VERSIONS = ["2.1.0", "2.6.1", "2.10.1"] as const;
+
 const supportedSources = new WeakMap<SourceInfo, boolean>();
 
 function supportsCustomInput(source: SourceInfo): boolean {
@@ -15,7 +17,7 @@ function supportsCustomInput(source: SourceInfo): boolean {
     ) as { name?: unknown; version?: unknown };
     supported =
       manifest.name === "@juicesharp/rpiv-ask-user-question" &&
-      (manifest.version === "2.1.0" || manifest.version === "2.6.1");
+      QUESTIONNAIRE_CUSTOM_INPUT_VERSIONS.some((version) => version === manifest.version);
   } catch {
     // Unknown sources keep the standard SDK select/input behavior.
   }
@@ -24,7 +26,7 @@ function supportsCustomInput(source: SourceInfo): boolean {
 }
 
 /**
- * rpiv 2.1.0 / 2.6.1 append a numbered custom-answer row, then immediately await
+ * The verified rpiv versions append a numbered custom-answer row, then immediately await
  * ui.input when that row is chosen. Keep select pending until custom text is
  * submitted so Desktop can go back without falsifying an option as a custom
  * answer. Scope this adapter to the published implementation we exercise.

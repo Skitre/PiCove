@@ -26,14 +26,16 @@ jobs:
           node-version: 22.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Replace the disposable v2 test alias with npm latest
+      - name: Add a disposable npm latest alias alongside pinned regressions
         run: >-
           pnpm --filter @pideck/pi-host add --save-dev --save-exact
-          '@pideck-test/rpiv-ask-user-question-v2@npm:@juicesharp/rpiv-ask-user-question@latest'
+          '@pideck-test/rpiv-ask-user-question-latest@npm:@juicesharp/rpiv-ask-user-question@latest'
           --lockfile=false
       - name: Build the protocol workspace
         run: pnpm --filter @pideck/protocol run build
-      - name: Run the real published-package regression
+      - name: Audit RPC compatibility and explicit desktop enhancement coverage
+        env:
+          PIDECK_RPIV_LATEST: "1"
         run: >-
           pnpm --filter @pideck/pi-host exec vitest run
           src/real-extension-compatibility.test.ts
