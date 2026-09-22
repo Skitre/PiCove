@@ -98,6 +98,7 @@ export function upsertSessionSnapshot(
     sessionId: snapshot.sessionId,
     sessionPath: snapshot.sessionPath ?? previous?.sessionPath ?? "",
     name: snapshot.name,
+    firstMessage: previous?.firstMessage,
     cwd: snapshot.cwd,
     // Recency is for "this Session just became active", not for every later
     // token. Streaming upserts and switch-away parks must keep the listed

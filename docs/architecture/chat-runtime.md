@@ -11,6 +11,7 @@
   file is not on disk yet. A blank unused create stays off the list.
 - `session.open` accepts a live background Runtime in this workspace, or a path
   from `session.list`. Other paths are rejected (must switch workspace first).
+- Recent-session labels prefer the persisted name, then an 80-character first-user-message excerpt (whitespace normalized), then the localized untitled label. `session.list` carries optional `firstMessage` separately from `name`; this display fallback never renames historical sessions or calls a model. Opening a session preserves its catalog excerpt.
 - React owns a normalized, workspace-scoped Session Catalog. Page navigation does not clear it.
 - Active Pi snapshots project `running`, `queued`, `idle`, `error`, or `inactive` state into the Catalog.
 - Composer drafts are keyed by Session id, so switching pages or Sessions does not discard input.

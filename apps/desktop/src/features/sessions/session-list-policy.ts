@@ -4,8 +4,16 @@ import type { SessionCatalogEntry, SessionRuntimeState } from "../../lib/stores/
 export type SessionFilter = "active" | "archived";
 
 /** Callers must pass the localized untitled label so search/render match the UI locale. */
-export function sessionDisplayName(item: Pick<SessionSummary, "name">, fallback: string): string {
-  return item.name?.trim() || fallback;
+export function sessionDisplayName(
+  item: Pick<SessionSummary, "name" | "firstMessage">,
+  fallback: string,
+): string {
+  const name = item.name?.trim();
+  if (name) return name;
+  const text = item.firstMessage?.replace(/\s+/gu, " ").trim();
+  if (!text) return fallback;
+  const chars = Array.from(text);
+  return chars.length > 80 ? `${chars.slice(0, 79).join("")}…` : text;
 }
 
 export function sessionRuntimeLabel(state: SessionRuntimeState): string {

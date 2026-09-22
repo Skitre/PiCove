@@ -56,6 +56,7 @@ export function createSessionHandlers(
                 sessionId: s.id,
                 sessionPath: s.path,
                 name: s.name,
+                firstMessage: stripAttachmentReferenceBlocks(s.firstMessage ?? ""),
                 cwd: s.cwd,
                 updatedAt: s.modified?.getTime?.() ?? Date.now(),
                 messageCount: s.messageCount,

@@ -201,6 +201,8 @@ export type SessionSummary = {
   sessionId: string;
   sessionPath: string;
   name?: string;
+  /** Display fallback only; never persisted as the session name. */
+  firstMessage?: string;
   cwd: string;
   updatedAt: number;
   messageCount?: number;

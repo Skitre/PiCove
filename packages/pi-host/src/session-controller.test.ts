@@ -38,7 +38,7 @@ describe("session.list runtime metadata", () => {
         {
           id: BACKGROUND_SESSION_ID,
           path: "C:/sessions/background.jsonl",
-          name: "Background",
+          firstMessage: "历史会话的首条消息",
           cwd: "C:/workspace",
           modified: new Date(20),
           messageCount: 4,
@@ -57,6 +57,7 @@ describe("session.list runtime metadata", () => {
 
     expect(response).toHaveProperty("result");
     if (!("result" in response)) return;
+    expect(validateSuccessResult("session.list", response.result).ok).toBe(true);
     expect(response.result).toEqual({
       workspaceId: WORKSPACE_ID,
       items: [
@@ -67,6 +68,8 @@ describe("session.list runtime metadata", () => {
         }),
         expect.objectContaining({
           sessionId: BACKGROUND_SESSION_ID,
+          name: undefined,
+          firstMessage: "历史会话的首条消息",
           runtimeState: "running",
           sessionRevision: 3,
         }),
@@ -137,9 +140,7 @@ describe("session.getTree", () => {
     const tree = (response.result as { tree: Record<string, unknown>[] }).tree;
     expect("label" in tree[0]!).toBe(false);
     expect("labelTimestamp" in tree[0]!).toBe(false);
-    expect(
-      (tree[0]!.children as Record<string, unknown>[])[0]!.label,
-    ).toBe("experiment");
+    expect((tree[0]!.children as Record<string, unknown>[])[0]!.label).toBe("experiment");
   });
 });
 

@@ -42,6 +42,18 @@ const active = {
 } satisfies SessionSnapshot;
 
 describe("sessionDisplayName", () => {
+  it("falls back to a normalized first-message excerpt without changing the name", () => {
+    const item = { name: "  ", firstMessage: "  修复历史会话\n 标题  " };
+    expect(sessionDisplayName(item, "新会话")).toBe("修复历史会话 标题");
+    expect(item.name).toBe("  ");
+    expect(sessionDisplayName({ name: "自定义", firstMessage: "首条消息" }, "新会话")).toBe(
+      "自定义",
+    );
+    expect(sessionDisplayName({ firstMessage: " \n " }, "新会话")).toBe("新会话");
+    expect(sessionDisplayName({ firstMessage: "😀".repeat(81) }, "新会话")).toBe(
+      `${"😀".repeat(79)}…`,
+    );
+  });
   it("uses the persisted name and falls back to the caller-provided label", () => {
     expect(sessionDisplayName({ name: "修复会话恢复" }, "新会话")).toBe("修复会话恢复");
     expect(sessionDisplayName({ name: undefined }, "新会话")).toBe("新会话");
