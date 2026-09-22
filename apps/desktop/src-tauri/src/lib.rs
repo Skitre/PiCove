@@ -5,11 +5,14 @@ mod draft_store;
 mod extension_float;
 mod extension_ui_settings;
 mod fonts;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 mod pi_host;
 #[cfg(test)]
 mod pi_host_tests;
 mod shell_terminal;
 mod system_tray;
+mod window_lifecycle;
 mod window_state;
 
 use desktop_settings::DesktopSettingsStore;
@@ -57,6 +60,8 @@ pub fn run() {
         })
         .setup(|app| {
             system_tray::install(app)?;
+            #[cfg(target_os = "macos")]
+            macos_menu::install(app)?;
 
             #[cfg(target_os = "windows")]
             if windows_version::OsVersion::current().build < 22_000 {
@@ -218,9 +223,16 @@ pub fn run() {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
                 ..
-            } if system_tray::should_hide_on_close(&label) => {
+            } if window_lifecycle::should_hide_on_close(&label) => {
                 api.prevent_close();
-                // The frontend checks unsaved file edits before hiding to tray.
+                // Keep the WebView and Host alive; the frontend saves drafts and
+                // checks unsaved file edits before hiding the main window.
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                if let Err(error) = window_lifecycle::reopen(app_handle) {
+                    eprintln!("[pideck] could not reopen main window: {error}");
+                }
             }
             tauri::RunEvent::ExitRequested { api, .. }
                 if app_handle.get_webview_window("main").is_some()

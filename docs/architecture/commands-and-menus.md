@@ -34,6 +34,17 @@ order:
 `mod+K` remains unassigned for a command palette. macOS native menu accelerators must
 not duplicate DOM-owned chords; each chord has one owner.
 
+On macOS, the native File → Close Window menu owns `Cmd+W` and calls Tauri's
+`close()` on the focused window. The default AppKit close action cannot close
+our borderless windows, so it is replaced rather than duplicated in the DOM.
+Closing the main
+window (including its close button) saves drafts, checks unsaved file edits,
+and hides the window without destroying its WebView or stopping the Host and
+terminals. The app remains in the Dock; clicking its Dock icon shows and focuses
+the existing main window. `Cmd+Q` and Quit still use the separate app-exit path,
+including draft persistence, unsaved-file confirmation, and process cleanup.
+Detached Extension windows retain their own close handling.
+
 ## Shortcut customization
 
 Settings renders editable bindings from the same command registry consumed by the

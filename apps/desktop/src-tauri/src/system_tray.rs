@@ -1,3 +1,4 @@
+#[cfg(any(target_os = "windows", test))]
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "pideck-tray";
 
@@ -29,14 +30,6 @@ fn should_restore_from_click(
     state: tauri::tray::MouseButtonState,
 ) -> bool {
     button == tauri::tray::MouseButton::Left && state == tauri::tray::MouseButtonState::Up
-}
-
-fn should_hide_for_platform(label: &str, is_windows: bool) -> bool {
-    is_windows && label == MAIN_WINDOW_LABEL
-}
-
-pub fn should_hide_on_close(label: &str) -> bool {
-    should_hide_for_platform(label, cfg!(target_os = "windows"))
 }
 
 pub fn remove(app: &tauri::AppHandle) {
@@ -133,13 +126,6 @@ mod tests {
             MouseButton::Right,
             MouseButtonState::Up
         ));
-    }
-
-    #[test]
-    fn hides_only_the_windows_main_window() {
-        assert!(should_hide_for_platform(MAIN_WINDOW_LABEL, true));
-        assert!(!should_hide_for_platform("settings", true));
-        assert!(!should_hide_for_platform(MAIN_WINDOW_LABEL, false));
     }
 
     #[test]

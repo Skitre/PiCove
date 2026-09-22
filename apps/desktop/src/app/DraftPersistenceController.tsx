@@ -8,13 +8,13 @@ import { draftKeyForTarget, draftTargetFor } from "../lib/draft-target";
 import { useAppStore } from "../lib/stores/app-store";
 import { ensureFileCanLeave, fileIsDirty } from "../features/dock/file-session";
 
-export function shouldAwaitDraftFlushOnClose(
+export function shouldHideWindowOnClose(
   tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM,
   userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent,
 ): boolean {
   const platform = tauriPlatform?.toLowerCase();
-  if (platform) return platform !== "windows" && platform !== "win32";
-  return !/Windows/i.test(userAgent);
+  if (platform) return ["windows", "win32", "macos", "darwin"].includes(platform);
+  return /Windows|Macintosh/i.test(userAgent);
 }
 
 type CloseRequest = {
@@ -42,6 +42,22 @@ export async function closeWindowAfterDraftFlush(
   } finally {
     await appWindow.destroy();
   }
+}
+
+export async function handleWindowClose(
+  event: CloseRequest,
+  appWindow: ClosingWindow,
+  {
+    hideOnClose = shouldHideWindowOnClose(),
+    settleDraftWrites = settleDraftWritesWithin,
+    ensureCanLeave = ensureFileCanLeave,
+  } = {},
+): Promise<void> {
+  event.preventDefault();
+  if (hideOnClose) await settleDraftWrites();
+  if (!(await ensureCanLeave())) return;
+  if (hideOnClose) await appWindow.hide();
+  else await closeWindowAfterDraftFlush(event, appWindow, settleDraftWrites);
 }
 
 export function DraftPersistenceController() {
@@ -110,12 +126,7 @@ export function DraftPersistenceController() {
         if (closing) return;
         closing = true;
         try {
-          if (!shouldAwaitDraftFlushOnClose()) await settleDraftWritesWithin();
-          if (!(await ensureFileCanLeave())) return;
-          if (shouldAwaitDraftFlushOnClose()) await closeWindowAfterDraftFlush(event, appWindow);
-          else {
-            await appWindow.hide();
-          }
+          await handleWindowClose(event, appWindow);
         } finally {
           closing = false;
         }
